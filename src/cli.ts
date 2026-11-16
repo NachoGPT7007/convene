@@ -74,6 +74,7 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene dm --seat seat.json --to @x <text>         direct message: ledger entry, private to the recipient
   convene dm inbox --seat seat.json [--keep-unread]  read your direct messages, grouped by seat
   convene ui --seat seat.json [--open]               print a one-click link to the dashboard
+  convene kick <table> <seat> [--url]                remove a seat; its token stops working at once
   convene pass --seat seat.json [text]
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
@@ -189,6 +190,14 @@ async function run() {
     case 'propose': return console.log(JSON.stringify(await seatFrom(flags.seat).propose(pos.join(' '), JSON.parse(flags.effects))));
     case 'approve': return console.log(JSON.stringify(await loadOwner(flags.owner).decide(url, pos[0], pos[1], flags.reject ? 'reject' : 'approve', flags.reason)));
     case 'mcp': { const { main } = await import('./mcp.js'); return main(); }
+    case 'kick': {
+      const [table, seat] = pos;
+      if (!table || !seat) throw new Error('kick <table> <seat>');
+      const res = await fetch(`${url}/local/tables/${encodeURIComponent(table)}/seats/${encodeURIComponent(seat)}/remove`, { method: 'POST' });
+      const j = (await res.json().catch(() => ({}))) as { error?: { message?: string }; removed?: string };
+      if (!res.ok) throw new Error(j.error?.message ?? `HTTP ${res.status}`);
+      return console.log(`removed @${j.removed ?? seat} from ${table}`);
+    }
     case 'ui': {
       if (!flags.seat) throw new Error('ui requires --seat seat.json: the link carries that seat\'s token');
       const s = JSON.parse(readFileSync(flags.seat, 'utf8')) as { url?: string; table: string; seat: string; token: string };

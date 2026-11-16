@@ -9,7 +9,8 @@ import { TableHost } from '../src/host.js';
 import { JsonlStore } from '../src/store.js';
 import { createTableServer } from '../src/server.js';
 import { isLoopback } from '../src/local.js';
-import { owners } from './helpers.js';
+import { cfg, owners } from './helpers.js';
+import { SeatClient, createTable } from '../src/client.js';
 
 const servers: Server[] = [];
 afterEach(() => { for (const s of servers.splice(0)) s.close(); });
@@ -86,6 +87,39 @@ describe('local operator interface', () => {
     expect(t.entries).toBeGreaterThan(0); // table_opened
     expect(t.holder).toBeNull();          // nobody has joined yet
     expect(typeof t.tokens).toBe('number');
+  });
+
+
+  it('removing a seat drops it from the projection and kills its token', async () => {
+    const { url } = await start();
+    await createTable(url, cfg('kick', { kind: 'broadcast', order: ['ka', 'kb'] }));
+    const a = await SeatClient.join(url, 'kick', owners.tao, { seat: 'ka', card: { bot: 'x', capabilities: [] } });
+    const b = await SeatClient.join(url, 'kick', owners.tao, { seat: 'kb', card: { bot: 'x', capabilities: [] } });
+
+    expect((await a.projection(0)).prefix.seats.map((x: { seat: string }) => x.seat)).toEqual(['ka', 'kb']);
+
+    const rm = await fetch(url + '/local/tables/kick/seats/ka/remove', { method: 'POST' });
+    expect(rm.status).toBe(200);
+
+    expect((await b.projection(0)).prefix.seats.map((x: { seat: string }) => x.seat)).toEqual(['kb']);
+    // The credential is revoked, so this is an auth failure and not a missing-seat 404.
+    const dead = await a.projection(0).then(() => null, (e: { code: string }) => e);
+    expect(dead?.code).toBe('E_UNAUTHORIZED');
+  });
+
+  it('hands the floor on when the removed seat was holding it', async () => {
+    const { url } = await start();
+    await createTable(url, cfg('kick2', { kind: 'broadcast', order: ['ka', 'kb'] }));
+    const b = await SeatClient.join(url, 'kick2', owners.tao, { seat: 'kb', card: { bot: 'x', capabilities: [] } });
+    await SeatClient.join(url, 'kick2', owners.tao, { seat: 'ka', card: { bot: 'x', capabilities: [] } });
+    expect((await b.projection(0)).floor.holder).toBe('ka');
+
+    await fetch(url + '/kick2-placeholder', { method: 'GET' }).catch(() => null);
+    await fetch(url + '/local/tables/kick2/seats/ka/remove', { method: 'POST' });
+    const after = await b.projection(0);
+    expect(after.prefix.seats.map((x: { seat: string }) => x.seat)).toEqual(['kb']);
+    // ka held the floor; it must not be left dangling.
+    expect(after.floor.holder).toBe('kb');
   });
 
   it('refuses the interface when a proxy forwarded the request', async () => {

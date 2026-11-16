@@ -201,7 +201,7 @@
   .desk-meta { color: var(--muted); font-size: 12px; }
   .desk-head .ops { margin-left: auto; display: flex; gap: 6px; }
   .members { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
-  .member { display: grid; grid-template-columns: 104px repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; }
+  .member { display: grid; grid-template-columns: 104px repeat(4, minmax(0, 1fr)) auto; gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; align-items: center; }
   .member .mono { color: var(--fg); }
   .desk-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
 </style>
@@ -952,7 +952,7 @@
     if (!res.ok) throw new Error('删除失败：HTTP ' + res.status);
   }
 
-  function memberRow(s) {
+  function memberRow(s, tableId) {
     const row = el('div', 'member');
     row.appendChild(el('span', 'mono', '@' + s.seat));
     const rt = s.runtime || {};
@@ -962,6 +962,16 @@
     const g = s.grants || {};
     const on = ['speak_anytime', 'reset_depth', 'read_dm_all', 'veto'].filter(k => g[k] === true);
     row.appendChild(el('span', '', '权限 ' + (on.length ? on.join(' · ') : '无')));
+    const rm = el('button', 'dm-btn', '移除');
+    rm.type = 'button';
+    rm.title = '把 @' + s.seat + ' 从这张桌移除';
+    rm.addEventListener('click', async () => {
+      if (!confirm(`把 @${s.seat} 从 ${tableId} 移除？它的 token 会立即失效，席位会从所有投影里消失。`)) return;
+      const res = await fetch(`/local/tables/${encodeURIComponent(tableId)}/seats/${encodeURIComponent(s.seat)}/remove`, { method: 'POST' });
+      if (!res.ok) { alert('移除失败：HTTP ' + res.status); return; }
+      await renderDesks();
+    });
+    row.appendChild(rm);
     return row;
   }
 
@@ -1012,7 +1022,7 @@
     try {
       const p = await projectionOf(t.id, seat.token);
       const list = el('div', 'members');
-      for (const s of p.prefix.seats || []) list.appendChild(memberRow(s));
+      for (const s of p.prefix.seats || []) list.appendChild(memberRow(s, t.id));
       art.appendChild(list);
     } catch (err) {
       art.appendChild(el('div', 'desk-note', '成员读取失败：' + err.message));

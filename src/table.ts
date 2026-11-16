@@ -82,6 +82,13 @@ export class Table extends EventEmitter {
           if (d.depth_reset) this.botDepth = 0;
           this.savedHolder = (d.resume as string) ?? null;
         }
+        if (e.event === 'seat_removed') {
+          const gone = d.seat as string;
+          this.seats.delete(gone);
+          if (this.holder === gone) this.holder = null;
+          if (this.pstate.queue) this.pstate.queue = this.pstate.queue.filter(x => x !== gone);
+          if (this.pstate.stack) this.pstate.stack = this.pstate.stack.filter(x => x !== gone);
+        }
         if (e.event === 'table_closed') { this.status = 'closed'; this.holder = null; this.closeReason = d.reason as string; }
         if (e.event === 'task_opened' || e.event === 'task_state') {
           const id = e.task!;
@@ -152,13 +159,23 @@ export class Table extends EventEmitter {
       }
       return this.close(`depth_exhausted (${this.botDepth} consecutive bot turns, no human seated)`);
     }
-    const n = this.policy.current(s);
-    if ('end' in n) {
-      if (this.cfg.termination.any.includes('rounds_exhausted')) return this.close('rounds_exhausted');
-      return this.close('rounds_exhausted (policy has no more turns)');
+    // A removed seat may still be next in the policy's sequence. Walk past the seats that are
+    // gone instead of granting the floor to somebody who is no longer at the table.
+    let state = s;
+    for (let guard = 0; guard < 256; guard++) {
+      const n = this.policy.current(state);
+      if ('end' in n) {
+        if (this.cfg.termination.any.includes('rounds_exhausted')) return this.close('rounds_exhausted');
+        return this.close('rounds_exhausted (policy has no more turns)');
+      }
+      if (this.seats.has(n.holder)) {
+        this.pstate = state;
+        return this.write({ seat: 'core', kind: 'system', event: 'floor_granted', to: ['@' + n.holder], body: `floor -> ${n.holder}`,
+          data: { holder: n.holder, policy: state, max_chars: this.maxChars } });
+      }
+      state = this.policy.after(state, { seq: 0, table: this.cfg.id, seat: 'core', kind: 'pass' });
     }
-    this.write({ seat: 'core', kind: 'system', event: 'floor_granted', to: ['@' + n.holder], body: `floor -> ${n.holder}`,
-      data: { holder: n.holder, policy: s, max_chars: this.maxChars } });
+    return this.close('no_eligible_holder (every remaining seat was removed)');
   }
 
   private checkTermination(): boolean {
@@ -273,6 +290,20 @@ export class Table extends EventEmitter {
       recent.push({ body, at: now });
       this.dmRecent.set(key, recent);
     }
+  }
+
+  /**
+   * Take a seat off the table. It is an ordinary system event, so replay reproduces the table:
+   * the seat disappears from every projection and its token stops authenticating.
+   */
+  removeSeat(seatId: string, reason?: string): Entry {
+    if (!this.seats.has(seatId)) throw new ByobError('E_NOT_FOUND', `seat ${seatId}`);
+    const held = this.holder === seatId;
+    const e = this.write({ seat: 'core', kind: 'system', event: 'seat_removed',
+      body: `${seatId} removed${reason ? `: ${reason}` : ''}`, data: { seat: seatId } });
+    // Its turn cannot be left hanging: hand the floor on, or close if nobody is left.
+    if (held && this.status === 'open' && this.grantSeq !== null) this.advance(this.pstate, true);
+    return e;
   }
 
   private endTurn(seatId: string, e: Entry) {

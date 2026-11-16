@@ -67,6 +67,10 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
             host.get(id).close(String(body.reason ?? 'closed from the table list'));
             return json(res, 200, { ok: true, table: id, status: 'closed' });
           }
+          if (req.method === 'POST' && parts[3] === 'seats' && parts[4] && parts[5] === 'remove') {
+            host.removeSeat(id, parts[4]);
+            return json(res, 200, { ok: true, removed: parts[4], table: id });
+          }
           if (req.method === 'DELETE' && parts.length === 3) {
             host.remove(id);
             return json(res, 200, { ok: true, removed: id });
@@ -93,7 +97,7 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
       }
       const id = parts[2];
       const t = host.get(id);
-      const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/.+$/, 'tasks/:id')}`;
+      const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/.+$/, 'tasks/:id').replace(/^seats\/[^/]+\/remove$/, 'seats/:seat/remove')}`;
       switch (route) {
         case 'POST seats': return json(res, 201, host.join(id, (await readBody(req)) as never));
         case 'POST entries': return json(res, 201, t.post(host.auth(id, bearer), (await readBody(req)) as never));
@@ -104,6 +108,7 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
         case 'GET entries/:seq': return json(res, 200, t.expand(host.auth(id, bearer), Number(parts[4])));
         case 'GET memory': host.auth(id, bearer); return json(res, 200, t.memory());
         case 'GET tasks/:id': host.auth(id, bearer); return json(res, 200, t.task(parts[4]));
+        case 'POST seats/:seat/remove': host.authAdmin(id, bearer); host.removeSeat(id, parts[4]); return json(res, 200, { ok: true, removed: parts[4] });
         case 'POST approvals': return json(res, 201, t.ownerDecision((await readBody(req)) as never));
         case 'POST close': host.authAdmin(id, bearer); t.close(String(((await readBody(req)) as { reason?: string }).reason ?? 'closed by admin')); return json(res, 200, t.memory());
         case 'GET ledger': host.authAdmin(id, bearer); return json(res, 200, t.entries);

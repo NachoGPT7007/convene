@@ -59,6 +59,16 @@ export class TableHost {
     });
   }
 
+  /** Remove a seat and revoke every token that belonged to it: a removed seat cannot act. */
+  removeSeat(id: string, seat: string) {
+    const t = this.get(id);
+    t.removeSeat(seat);
+    const m = this.tokens.get(id);
+    if (!m) return;
+    for (const hash of Object.keys(m)) if (m[hash] === seat) delete m[hash];
+    this.store?.saveTokens(id, m);
+  }
+
   /** Drop a table from memory and delete its files. The ledger is gone afterwards: no undo. */
   remove(id: string) {
     if (!this.tables.has(id)) throw new ByobError('E_NOT_FOUND', `table ${id}`);
