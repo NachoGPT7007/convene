@@ -42,21 +42,29 @@ describe('convene service', () => {
     expect(serviceUnit(opts({ name: 'convene-test' }))).toContain('Description=convene table host');
   });
 
-  it('prefers a built host and falls back to tsx only when dist is absent', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'convene-svc-'));
-    mkdirSync(join(repo, 'dist', 'src'), { recursive: true });
-    writeFileSync(join(repo, 'dist', 'src', 'cli.js'), '// built');
-    expect(defaultServeExec(repo, '/usr/bin/node')).toEqual(['/usr/bin/node', join(repo, 'dist', 'src', 'cli.js')]);
+  it('runs the source by default, and dist only when asked, so no build can go stale', () => {
+    const both = mkdtempSync(join(tmpdir(), 'convene-svc-'));
+    mkdirSync(join(both, 'dist', 'src'), { recursive: true });
+    mkdirSync(join(both, 'node_modules', 'tsx', 'dist'), { recursive: true });
+    mkdirSync(join(both, 'src'), { recursive: true });
+    writeFileSync(join(both, 'dist', 'src', 'cli.js'), '// built');
+    writeFileSync(join(both, 'node_modules', 'tsx', 'dist', 'cli.mjs'), '// tsx');
+    writeFileSync(join(both, 'src', 'cli.ts'), '// ts');
+    const tsxCmd = ['/usr/bin/node', join(both, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(both, 'src', 'cli.ts')];
+    const distCmd = ['/usr/bin/node', join(both, 'dist', 'src', 'cli.js')];
 
-    const fresh = mkdtempSync(join(tmpdir(), 'convene-svc-'));
-    mkdirSync(join(fresh, 'node_modules', 'tsx', 'dist'), { recursive: true });
-    mkdirSync(join(fresh, 'src'), { recursive: true });
-    writeFileSync(join(fresh, 'node_modules', 'tsx', 'dist', 'cli.mjs'), '// tsx');
-    writeFileSync(join(fresh, 'src', 'cli.ts'), '// ts');
-    expect(defaultServeExec(fresh, '/usr/bin/node')).toEqual(['/usr/bin/node', join(fresh, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(fresh, 'src', 'cli.ts')]);
+    expect(defaultServeExec(both, '/usr/bin/node')).toEqual(tsxCmd);                 // auto: source wins
+    expect(defaultServeExec(both, '/usr/bin/node', 'source')).toEqual(tsxCmd);
+    expect(defaultServeExec(both, '/usr/bin/node', 'dist')).toEqual(distCmd);        // explicit only
+
+    const distOnly = mkdtempSync(join(tmpdir(), 'convene-svc-'));
+    mkdirSync(join(distOnly, 'dist', 'src'), { recursive: true });
+    writeFileSync(join(distOnly, 'dist', 'src', 'cli.js'), '// built');
+    expect(defaultServeExec(distOnly, '/usr/bin/node')).toEqual(['/usr/bin/node', join(distOnly, 'dist', 'src', 'cli.js')]);
 
     const empty = mkdtempSync(join(tmpdir(), 'convene-svc-'));
-    expect(() => defaultServeExec(empty)).toThrow(/npm run build/);
+    expect(() => defaultServeExec(empty)).toThrow(/npm install/);
+    expect(() => defaultServeExec(empty, '/usr/bin/node', 'dist')).toThrow(/--from dist/);
   });
 
   it('finds this package root by walking up to the package.json that names it', () => {

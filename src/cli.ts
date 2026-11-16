@@ -26,13 +26,14 @@ const seatFrom = (f: string) => { const s = JSON.parse(readFileSync(f, 'utf8'));
 /** Everything `convene service` needs, resolved from flags so the unit matches what you asked for. */
 function serviceOptions(name: string): ServiceOptions {
   const repoRoot = repoRootFromModule();
+  const from = (flags.from === 'dist' || flags.from === 'source') ? flags.from : 'auto';
   return {
     name,
     port: Number(flags.port ?? 7341),
     host: flags.host ?? '127.0.0.1',
     dataDir: resolve(flags.data ?? './data'),
     repoRoot,
-    exec: defaultServeExec(repoRoot, process.execPath),
+    exec: defaultServeExec(repoRoot, process.execPath, from),
   };
 }
 
@@ -68,9 +69,10 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene doctor [--port 7341] [--data ./data] [--url base] [--github]
                                                      read-only checks; --github measures both roads,
                                                      --url verifies a host (directly or via a proxy)
-  convene service install|status|uninstall|unit [--name convene] [--port 7341] [--host 127.0.0.1] [--data ./data]
-                                                     let systemd --user own the port, so the host
-                                                     outlives the terminal and comes back after a reboot
+  convene service install|status|uninstall|unit [--name convene] [--port 7341] [--host 127.0.0.1] [--data ./data] [--from source|dist]
+                                                     let systemd --user own the port. Default runs the
+                                                     source through tsx: no build step, so nothing can
+                                                     go stale. --from dist is for a release.
 
   \`byob\` is kept as an alias for every subcommand above.
 `;

@@ -76,16 +76,28 @@ export function locateRepoRoot(from: string): string {
   throw new Error('cannot find the convene package root (package.json with name "convene" above this file)');
 }
 
+export type ServeSource = 'auto' | 'source' | 'dist';
+
 /**
- * A built host is preferred: it starts faster and needs no TypeScript loader. Falling back to tsx
- * keeps `convene service install` working from a fresh checkout.
+ * A resident host does not need a build step. tsx runs the source directly — about 0.7s at start,
+ * once — and there is then no artifact that can be older than the code it came from. `dist` is for
+ * a machine without node_modules (a release, a container) and has to be asked for on purpose.
  */
-export function defaultServeExec(repoRoot: string, nodePath = process.execPath): string[] {
-  const built = join(repoRoot, 'dist', 'src', 'cli.js');
-  if (existsSync(built)) return [nodePath, built];
+export function defaultServeExec(repoRoot: string, nodePath = process.execPath, source: ServeSource = 'auto'): string[] {
+  const src = join(repoRoot, 'src', 'cli.ts');
   const tsx = join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
-  if (existsSync(tsx)) return [nodePath, tsx, join(repoRoot, 'src', 'cli.ts')];
-  throw new Error('neither dist/src/cli.js nor node_modules/tsx exists — run `npm install && npm run build` first');
+  const built = join(repoRoot, 'dist', 'src', 'cli.js');
+
+  const fromSource = existsSync(tsx) && existsSync(src) ? [nodePath, tsx, src] : null;
+  const fromDist = existsSync(built) ? [nodePath, built] : null;
+
+  if (source === 'source') return fromSource ?? missing('tsx and src/cli.ts');
+  if (source === 'dist') return fromDist ?? missing('dist/src/cli.js');
+  return fromSource ?? fromDist ?? missing('either tsx + src/cli.ts or dist/src/cli.js');
+}
+
+function missing(what: string): never {
+  throw new Error(`cannot run the host: ${what} not found — run \`npm install\` (and \`npm run build\` for --from dist)`);
 }
 
 export function systemctlUser(args: string[]): { ok: boolean; out: string } {
