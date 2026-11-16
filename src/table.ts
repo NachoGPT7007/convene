@@ -396,6 +396,9 @@ export class Table extends EventEmitter {
   prefix() {
     const seats = [...this.seats.values()].sort((a, b) => a.joined_seq - b.joined_seq).map(s => ({
       seat: s.seat, owner: s.owner, kind: s.kind, role: s.role, bot: s.card.bot, proxy: s.card.proxy ?? false,
+      // Who is behind this seat, what runs it, and how it got here: owner is the human principal,
+      // bot is the agent, transport is the channel it joined over.
+      transport: s.transport ?? null,
       capabilities: s.card.capabilities,
       // Signed into the card, so it cannot be set by a client that is not the owner (convene).
       badge: s.card.badge ?? null,

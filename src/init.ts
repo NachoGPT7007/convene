@@ -6,16 +6,30 @@ import { ByobError, type TableConfig, type TerminationCond } from './protocol.js
 export interface SeatSpec {
   /** The seat id this person will occupy. */
   seat: string;
-  /** The owner's Ed25519 public key (from their key file). */
-  publicKey: string;
+  /** The owner's Ed25519 public key. Omitted when it comes from `owners` by owner id. */
+  publicKey?: string;
   /** The owner id that key belongs to; several seats may share one owner. */
   owner: string;
+  /** How this seat gets in: 'mcp', 'cli', 'http'… shown to every seat in the projection. */
+  transport?: string;
 }
+
+/** An owner whose public key is known without a key file — what a participant sends you. */
+export interface OwnerKey { owner: string; publicKey: string }
+
+/**
+ * co-create: everyone takes the floor in turn, and each decision opens the next round.
+ * coordinate: the first seat dispatches, the rest are its reports — the assign-a-task shape.
+ */
+export type TableMode = 'co-create' | 'coordinate';
 
 export interface InitOptions {
   id: string;
   topic: string;
   seats: SeatSpec[];
+  /** Public keys collected from people who are not on this machine. */
+  owners?: OwnerKey[];
+  mode?: TableMode;
   rounds?: number;
   decisionBy?: string;
   budgetTokens?: number;
@@ -36,16 +50,31 @@ export function buildTableConfig(o: InitOptions): TableConfig {
 
   // One entry per owner, however many seats that owner holds.
   const owners: TableConfig['owners'] = {};
+  const supplied = new Map((o.owners ?? []).map(x => [x.owner, x.publicKey]));
   for (const s of o.seats) {
-    if (!s.owner) throw new ByobError('E_CONFIG', `seat "${s.seat}": the owner key file has no id`);
+    if (!s.owner) throw new ByobError('E_CONFIG', `seat "${s.seat}": no owner id`);
+    const publicKey = s.publicKey ?? supplied.get(s.owner);
+    if (!publicKey) {
+      throw new ByobError('E_CONFIG', `seat "${s.seat}": owner "${s.owner}" has no public key — pass --owner ${s.owner}:<base64>`);
+    }
     const existing = owners[s.owner];
-    if (existing && existing.public_key !== s.publicKey) {
+    if (existing && existing.public_key !== publicKey) {
       throw new ByobError('E_CONFIG', `owner "${s.owner}" is used with two different keys`);
     }
-    owners[s.owner] = { public_key: s.publicKey };
+    owners[s.owner] = { public_key: publicKey };
+  }
+  // A key nobody seats is still an owner: they may join later with a seat the table already lists.
+  for (const [owner, publicKey] of supplied) {
+    if (!owners[owner]) owners[owner] = { public_key: publicKey };
   }
 
   const order = o.seats.map(s => s.seat);
+  const rounds = o.rounds && o.rounds > 0 ? o.rounds : 3;
+  const mode: TableMode = o.mode ?? 'co-create';
+  const topology: TableConfig['topology'] = mode === 'coordinate'
+    ? { kind: 'delegation', hub: order[0], reports: { [order[0]]: order.slice(1) }, rounds }
+    : { kind: 'broadcast', order, rounds };
+  // In a dispatched table the dispatcher decides; in a round table the first seat does.
   const decisionBy = o.decisionBy ?? order[0];
 
   const termination: TerminationCond[] = ['rounds_exhausted'];
@@ -55,7 +84,7 @@ export function buildTableConfig(o: InitOptions): TableConfig {
     id: o.id,
     topic: o.topic,
     owners,
-    topology: { kind: 'broadcast', order, rounds: o.rounds && o.rounds > 0 ? o.rounds : 3 },
+    topology,
     floor: {
       max_chars: o.maxChars ?? 4000,
       max_bot_depth: o.maxBotDepth ?? 32,

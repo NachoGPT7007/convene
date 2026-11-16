@@ -50,6 +50,28 @@ describe('convene init', () => {
     expect(() => check('table-config', cfg)).not.toThrow();
   });
 
+
+  it('coordinate mode makes the first seat the dispatcher', () => {
+    const cfg = buildTableConfig({ id: 't', topic: 'x', seats, mode: 'coordinate' });
+    expect(cfg.topology).toEqual({ kind: 'delegation', hub: 'alice', reports: { alice: ['bob'] }, rounds: 3 });
+    expect(cfg.floor?.decision_by).toEqual(['alice']);
+  });
+
+  it('takes public keys supplied separately, the way a remote participant sends them', () => {
+    const cfg = buildTableConfig({
+      id: 't', topic: 'x',
+      seats: [{ seat: 'nacho.wsl', owner: 'nacho' }, { seat: 'nacho.fedora', owner: 'nacho' }, { seat: 'guest.pc', owner: 'guest' }],
+      owners: [{ owner: 'nacho', publicKey: 'PUB-N' }, { owner: 'guest', publicKey: 'PUB-G' }],
+    });
+    // Two seats, one human: one owner entry, two positions.
+    expect(cfg.owners).toEqual({ nacho: { public_key: 'PUB-N' }, guest: { public_key: 'PUB-G' } });
+    expect(cfg.topology.order).toEqual(['nacho.wsl', 'nacho.fedora', 'guest.pc']);
+  });
+
+  it('refuses a seat whose owner key was never supplied', () => {
+    expect(codeOf(() => buildTableConfig({ id: 't', topic: 'x', seats: [{ seat: 'a', owner: 'nobody' }] }))).toBe('E_CONFIG');
+  });
+
   it('parses <seat>:<key file>, including paths that contain a colon', () => {
     expect(parseSeatSpec('alice:alice.owner.json')).toEqual({ seat: 'alice', keyFile: 'alice.owner.json' });
     expect(parseSeatSpec('bob:/home/x/a:b.owner.json')).toEqual({ seat: 'bob', keyFile: '/home/x/a:b.owner.json' });

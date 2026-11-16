@@ -52,8 +52,9 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; cursor: pointer;
   }
   button:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
-  main { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; padding: 16px 18px 8px; align-items: start; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  main { display: grid; grid-template-columns: 276px minmax(0, 1fr) 304px; gap: 14px; padding: 16px 18px 8px; align-items: start; }
+  @media (max-width: 1180px) { main { grid-template-columns: 260px minmax(0, 1fr); } #tasks { grid-column: 1 / -1; } }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } #tasks { grid-column: auto; } }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
   .panel > h2 {
     margin: 0; padding: 11px 14px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
@@ -97,8 +98,8 @@
   .lock { color: var(--dm); }
   .empty { padding: 22px 14px; color: var(--muted); text-align: center; font-size: 12.5px; }
 
-  /* tasks */
-  #tasks { margin: 0 18px 18px; }
+  /* tasks（第三栏） */
+  #tasks { max-height: calc(100vh - 190px); overflow: auto; }
   .task { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
   .task:last-child { border-bottom: 0; }
   .state { border-radius: 5px; padding: 0 6px; font-size: 11px; border: 1px solid var(--line); color: var(--muted); }
@@ -167,6 +168,23 @@
   .task button { padding: 3px 9px; font-size: 11.5px; }
   .task .ops { margin-left: auto; display: flex; gap: 6px; }
   .task-note { color: var(--muted); font-size: 11.5px; padding: 4px 14px 10px; }
+
+  /* 开桌向导 */
+  #newTable { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(6px);
+    overflow: auto; padding: 24px 0; }
+  #newTable[hidden] { display: none; }
+  .modes { display: grid; gap: 8px; margin: 10px 0 4px; }
+  .modes label { display: grid; grid-template-columns: auto 1fr; gap: 4px 9px; align-items: center;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .modes label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  .modes small { grid-column: 2; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  .seatrow { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
+  .seatrow input { font-size: 12.5px; padding: 6px 8px; }
+  .seatrow .del { padding: 2px 9px; }
+  pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+    font: 11.5px/1.65 ui-monospace, Menlo, Consolas, monospace; overflow: auto; max-height: 240px;
+    white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
 </style>
 </head>
 <body>
@@ -180,6 +198,7 @@
   <span class="spacer"></span>
   <span class="pill"><span class="dot" id="dot"></span><span id="link">未连接</span></span>
   <button id="btnInbox" title="收件箱">私信</button>
+  <button id="btnNew" title="开一张新桌子">开桌</button>
   <button id="btnTheme" title="切换主题">主题</button>
   <button id="btnSetup">设置</button>
 </header>
@@ -193,6 +212,12 @@
     <h2>账本 <span class="count" id="tailCount"></span></h2>
     <div id="tail"><div class="empty">等待数据…</div></div>
   </section>
+
+  <section class="panel" id="tasks">
+  <h2>我的任务 <span class="count" id="taskCount"></span></h2>
+  <div id="taskList"><div class="empty">没有指派给我的任务</div></div>
+  <div class="task-note">审批要主人私钥签名，页面不持有私钥：用 <code>convene approve &lt;table&gt; &lt;task&gt; --owner owner.json</code>。</div>
+</section>
 </main>
 
 <section class="panel" id="inbox" aria-label="私信">
@@ -200,11 +225,7 @@
   <div id="inboxList"></div>
 </section>
 
-<section class="panel" id="tasks">
-  <h2>我的任务 <span class="count" id="taskCount"></span></h2>
-  <div id="taskList"><div class="empty">没有指派给我的任务</div></div>
-  <div class="task-note">审批要主人私钥签名，页面不持有私钥：用 <code>convene approve &lt;table&gt; &lt;task&gt; --owner owner.json</code>。</div>
-</section>
+
 
 <section class="panel" id="composer" aria-label="发送">
   <div class="seg" role="group" aria-label="发送方式">
@@ -216,6 +237,47 @@
   <button class="send" id="btnSend" type="button">发送</button>
   <p id="sendHint">发言需要持有发言权；私信不用。</p>
 </section>
+
+<div id="newTable" hidden>
+  <div class="card" style="width:min(640px,calc(100vw - 32px))">
+    <h2>开一张新桌子</h2>
+    <p>浏览器里没有 owner 私钥，所以这里只生成命令：建桌与入座都要私钥签名。</p>
+
+    <div class="modes">
+      <label><input type="radio" name="ntMode" value="co-create" checked>
+        共创模式
+        <small>圆桌：所有人轮流发言，每落一个决定进下一轮（broadcast）</small>
+      </label>
+      <label><input type="radio" name="ntMode" value="coordinate">
+        协作模式
+        <small>派单：第一个席位当调度，其余是它的执行席位（delegation）</small>
+      </label>
+    </div>
+
+    <label for="ntId">桌子 id</label>
+    <input id="ntId" placeholder="nacho-table" autocomplete="off">
+    <label for="ntTopic">主题</label>
+    <input id="ntTopic" placeholder="这次要一起做什么" autocomplete="off">
+
+    <label>席位（人类 ID / 席位名 / agent）</label>
+    <div id="ntSeats"></div>
+    <button id="ntAdd" type="button" style="margin-bottom:6px">+ 再加一席</button>
+    <div class="hint">
+      席位名建议 <code>&lt;人类ID&gt;.&lt;机器&gt;</code>：<code>nacho.wsl</code>、<code>nacho.fedora</code>。
+      同一个人的两台机器是同一个人类 ID、两个席位，权限可以不一样。
+    </div>
+
+    <div class="err" id="ntErr"></div>
+    <div class="row">
+      <button id="ntCancel" type="button">关闭</button>
+      <button id="ntGen" type="button" style="background:var(--accent);border-color:var(--accent);color:#fff">生成命令</button>
+    </div>
+    <pre class="cmd" id="ntOut" hidden></pre>
+    <div class="row" id="ntCopyRow" hidden>
+      <button id="ntCopy" type="button">复制命令</button>
+    </div>
+  </div>
+</div>
 
 <div id="setup" hidden>
   <div class="card">
@@ -498,14 +560,16 @@
       }
       right.appendChild(name);
       const meta = el('div', 'meta');
-      meta.appendChild(el('span', 'tag', s.owner));
-      meta.appendChild(el('span', 'tag' + (s.kind === 'human' ? ' human' : ''), s.kind));
-      if (s.bot) meta.appendChild(el('span', 'tag', s.bot));
+      // 四层身份：人类（principal）→ agent → 系统/席位 → 权限
+      meta.appendChild(el('span', 'tag', '人类 ' + s.owner));
+      if (s.bot) meta.appendChild(el('span', 'tag', 'agent ' + s.bot));
+      meta.appendChild(el('span', 'tag' + (s.kind === 'human' ? ' human' : ''), s.kind === 'human' ? '人类席位' : '机器席位'));
+      if (s.transport) meta.appendChild(el('span', 'tag', '系统 ' + s.transport));
+      if (s.role) meta.appendChild(el('span', 'tag', s.role));
       if (s.proxy) meta.appendChild(el('span', 'tag grant', 'PROXY'));
       const g = s.grants || {};
-      for (const k of ['speak_anytime', 'reset_depth', 'read_dm_all', 'veto']) {
-        if (g[k] === true) meta.appendChild(el('span', 'tag grant', k));
-      }
+      const on = ['speak_anytime', 'reset_depth', 'read_dm_all', 'veto'].filter(k => g[k] === true);
+      meta.appendChild(el('span', 'tag' + (on.length ? ' grant' : ''), '权限 ' + (on.length ? on.join(' · ') : '无')));
       right.appendChild(meta);
       row.appendChild(right);
       box.appendChild(row);
@@ -742,6 +806,90 @@
   $('btnSetup').addEventListener('click', () => showSetup(''));
   $('fToken').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
   $('fTable').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('fToken').focus(); });
+
+
+  // ---- 开桌向导：只生成命令，私钥不在浏览器里 ----------------------------
+  function ntSeatRow(human, seat, agent) {
+    const row = el('div', 'seatrow');
+    const mk = (placeholder, value) => {
+      const i = el('input');
+      i.type = 'text';
+      i.placeholder = placeholder;
+      i.value = value || '';
+      return i;
+    };
+    const h = mk('人类ID（nacho）', human);
+    const s2 = mk('席位名（nacho.wsl）', seat);
+    const a = mk('agent（dsh）', agent);
+    const del = el('button', 'del', '×');
+    del.type = 'button';
+    del.addEventListener('click', () => row.remove());
+    row.append(h, s2, a, del);
+    return row;
+  }
+
+  function openNewTable() {
+    const box = $('ntSeats');
+    if (!box.children.length) box.append(ntSeatRow('', '', ''));
+    $('ntErr').textContent = '';
+    $('ntOut').hidden = true;
+    $('ntCopyRow').hidden = true;
+    $('newTable').hidden = false;
+  }
+
+  function generatedCommands() {
+    const id = $('ntId').value.trim() || 'main';
+    const topic = $('ntTopic').value.trim() || '（填一个主题）';
+    const mode = document.querySelector('input[name=ntMode]:checked').value;
+    const rows = [...$('ntSeats').querySelectorAll('.seatrow')]
+      .map(r => [...r.querySelectorAll('input')].map(i => i.value.trim()))
+      .filter(r => r[1] && r[0]);
+    if (!rows.length) throw new Error('至少要一个席位：人类 ID 和席位名都要填');
+
+    // 同一个人类 ID 只生成一次密钥、只登记一次 owner：两台机器是两个席位，不是两个人。
+    const humans = [...new Set(rows.map(r => r[0]))];
+    const lines = [
+      '# 1) 每个人在自己的机器上生成密钥，只把 publicKey 发回来（私钥不出本机）',
+      ...humans.map((human) => `convene keygen ${human} --out ${human}.owner.json`),
+      '',
+      '# 2) 收到公钥后，在这台机器上生成配置',
+      `convene init --id ${id} --topic "${topic}" --mode ${mode} \\`,
+      ...humans.map((human) => `  --owner ${human}:<${human} 发来的 publicKey> \\`),
+      ...rows.map(([human, seat]) => `  --seat ${seat}:${human} \\`),
+      `  --out ${id}.table.json`,
+      '',
+      '# 3) 起宿主并开桌（--host 决定谁能连：127.0.0.1 / 100.x.x.x / 0.0.0.0）',
+      'convene serve --host 127.0.0.1 --port 7341 --data ./data',
+      `convene create ${id}.table.json --url http://127.0.0.1:7341`,
+      '',
+      '# 4) 每个人入座，然后取看板链接',
+      ...rows.map(([human, seat]) => `convene join ${id} --url <地址> --owner ${human}.owner.json --seat ${seat} --out ${seat}.seat.json`),
+    ];
+    return lines.join('\n');
+  }
+
+  $('btnNew').addEventListener('click', openNewTable);
+  $('ntAdd').addEventListener('click', () => $('ntSeats').append(ntSeatRow('', '', '')));
+  $('ntCancel').addEventListener('click', () => { $('newTable').hidden = true; });
+  $('ntGen').addEventListener('click', () => {
+    try {
+      $('ntErr').textContent = '';
+      $('ntOut').textContent = generatedCommands();
+      $('ntOut').hidden = false;
+      $('ntCopyRow').hidden = false;
+    } catch (err) {
+      $('ntErr').textContent = err.message || String(err);
+      $('ntOut').hidden = true;
+      $('ntCopyRow').hidden = true;
+    }
+  });
+  $('ntCopy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('ntOut').textContent || '');
+      $('ntCopy').textContent = '已复制';
+      setTimeout(() => { $('ntCopy').textContent = '复制命令'; }, 1500);
+    } catch { $('ntCopy').textContent = '复制失败，手动选中'; }
+  });
 
   // ---- theme --------------------------------------------------------------
   const THEME_KEY = 'convene.theme';

@@ -64,8 +64,9 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
 
   convene serve [--port 7341] [--host 127.0.0.1] [--data ./data]
   convene keygen <owner-id> --out owner.json         Ed25519 owner key (keep private)
-  convene init --id main --topic "..." --seat alice:alice.owner.json --seat bob:bob.owner.json [--rounds 3] [--budget 200000] [--out table.json]
-                                                     build a table config from owner key files
+  convene init --id main --topic "..." --mode co-create|coordinate --seat alice:alice.owner.json --seat bob:bob.owner.json [--rounds 3] [--budget 200000] [--out table.json]
+                                                     build a table config. co-create = round table (everyone
+                                                     takes turns), coordinate = dispatch (first seat leads)
   convene create <table-config.json>                 prints admin token
   convene join <table> --owner owner.json --seat <id> [--role r] [--bot name] [--card card.json] [--human] --out seat.json
   convene read --seat seat.json [--since N]          projection (prefix + tail)
@@ -125,16 +126,30 @@ async function run() {
     case 'init': {
       const specs = multi.seat ?? [];
       if (!specs.length) throw new Error('init needs at least one --seat <name>:<owner key file>');
+      // --seat alice:alice.owner.json reads the key file; --spect nacho.wsl:nacho names the owner
+      // and lets --owner supply the public key (what a remote participant sends you).
       const seats = specs.map(raw => {
         const { seat, keyFile } = parseSeatSpec(raw);
+        const looksLikeFile = keyFile.endsWith('.json') || keyFile.includes('/');
+        if (!looksLikeFile) return { seat, owner: keyFile };
         const k = JSON.parse(readFileSync(keyFile, 'utf8')) as { id?: string; publicKey?: string };
         if (!k.publicKey || !k.id) throw new Error(`${keyFile}: not an owner key file (needs id and publicKey)`);
         return { seat, owner: k.id, publicKey: k.publicKey };
       });
+      const owners = (multi.owner ?? []).map(raw => {
+        const i = raw.indexOf(':');
+        if (i <= 0 || i === raw.length - 1) throw new Error('--owner expects <id>:<base64 publicKey>');
+        return { owner: raw.slice(0, i), publicKey: raw.slice(i + 1) };
+      });
+      const mode = flags.mode === undefined ? 'co-create'
+        : flags.mode === 'co-create' || flags.mode === 'coordinate' ? flags.mode
+        : (() => { throw new Error('--mode must be co-create or coordinate'); })();
       const cfg = buildTableConfig({
         id: flags.id ?? pos[0] ?? 'main',
         topic: flags.topic ?? 'a convene table',
+        mode,
         seats,
+        owners,
         rounds: flags.rounds ? Number(flags.rounds) : undefined,
         decisionBy: flags['decision-by'],
         budgetTokens: flags.budget ? Number(flags.budget) : undefined,
@@ -144,7 +159,7 @@ async function run() {
       const json = JSON.stringify(cfg, null, 2) + '\n';
       if (flags.out) {
         writeFileSync(flags.out, json);
-        console.log(`wrote ${flags.out} — ${seats.length} seat(s), ${Object.keys(cfg.owners).length} owner(s)`);
+        console.log(`wrote ${flags.out} — ${mode}, ${seats.length} seat(s), ${Object.keys(cfg.owners).length} owner(s)`);
         console.log(`next: convene create ${flags.out} --url <host>, then each seat runs convene join`);
       } else {
         console.log(json.trimEnd());
