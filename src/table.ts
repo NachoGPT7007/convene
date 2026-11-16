@@ -17,6 +17,11 @@ export interface Store {
 
 const GOVERNANCE = new Set(['system', 'proposal', 'decision', 'approval', 'rejection', 'status', 'receipt', 'verify']);
 
+/** Direct-message limits, taken from codync-network: 5 in a burst, then 1 per 2 minutes, no repeat within 10. */
+const DM_BURST = 5;
+const DM_REFILL_MS = 2 * 60_000;
+const DM_REPEAT_MS = 10 * 60_000;
+
 export class Table extends EventEmitter {
   readonly cfg: TableConfig;
   readonly policy: Policy;
@@ -30,8 +35,13 @@ export class Table extends EventEmitter {
   closeReason?: string;
   tokens = 0;
   botDepth = 0;
+  /** Convene: decisions landed so far. `round` on an entry is this value at the moment it landed. */
+  roundNo = 0;
   usedNonces = new Set<string>();
   cursors = new Map<string, number>();
+  /** Convene: token buckets and recent bodies per sender->recipient pair. Never on the ledger. */
+  private dmBuckets = new Map<string, { tokens: number; last: number }>();
+  private dmRecent = new Map<string, { body: string; at: number }[]>();
   private savedHolder: string | null = null;
 
   constructor(cfg: TableConfig, private store?: Store, replay?: Entry[], private now: () => number = Date.now) {
@@ -51,7 +61,7 @@ export class Table extends EventEmitter {
 
   // ---------- the single writer ----------
   private write(partial: Omit<Entry, 'seq' | 'table'>): Entry {
-    const e = { seq: this.entries.length + 1, table: this.cfg.id, ...partial, ts: new Date(this.now()).toISOString() } as Entry;
+    const e = { seq: this.entries.length + 1, table: this.cfg.id, round: this.roundNo, ...partial, ts: new Date(this.now()).toISOString() } as Entry;
     this.store?.append(e);
     this.apply(e);
     this.emit('entry', e);
@@ -59,6 +69,8 @@ export class Table extends EventEmitter {
   }
 
   private apply(e: Entry) {
+    // A ledger replayed from before the `round` extension carries no round: stamp it while replaying.
+    if (e.round === undefined) e.round = this.roundNo;
     this.entries.push(e);
     const d = e.data ?? {};
     if (typeof d.nonce === 'string') this.usedNonces.add(d.nonce);
@@ -94,6 +106,8 @@ export class Table extends EventEmitter {
           const s = this.seats.get(e.seat);
           this.botDepth = s?.kind === 'human' ? 0 : this.botDepth + 1;
         }
+        // Every landed decision opens the next round; entries already on the ledger keep the round they landed in.
+        if (e.kind === 'decision') this.roundNo += 1;
         break;
     }
   }
@@ -210,6 +224,54 @@ export class Table extends EventEmitter {
       }
       case 'status': case 'receipt': case 'verify':
         return this.workPlane(seat, req);
+      case 'dm':
+        return this.privateMessage(seatId, req);
+    }
+  }
+
+  /**
+   * A direct message: no floor, but it is a ledger entry. Only the sender, the named recipients and
+   * seats whose owner-signed card carries `grants.read_dm_all` may ever see it (see canSee).
+   */
+  private privateMessage(seatId: string, req: PostRequest): Entry {
+    if (this.status === 'closed') throw new ByobError('E_TABLE_CLOSED', `table closed (${this.closeReason})`);
+    const to = req.to ?? [];
+    if (!to.length) throw new ByobError('E_SCHEMA', 'dm requires "to": name at least one seat, e.g. ["@bob"]');
+    if (!req.body) throw new ByobError('E_SCHEMA', 'dm requires a body');
+    const targets = [...new Set(to.map(a => (a.startsWith('@') ? a.slice(1) : '')))];
+    // Point to point only: `*` and `role:` would turn a private channel into a broadcast.
+    if (targets.some(s => !s || !this.seats.has(s))) throw new ByobError('E_ADDRESS', `dm may only address seats as "@<seat>"; got ${to.join(', ')}`);
+    this.checkDmRate(seatId, targets, req.body);
+    const e = this.write({ seat: seatId, kind: 'dm', to, reply_to: req.reply_to, body: req.body, refs: req.refs });
+    this.noteDm(seatId, targets, req.body);
+    return e;
+  }
+
+  /** Token bucket per sender->recipient pair, plus a repeat guard: cheap, in-memory, restart-forgiving. */
+  private checkDmRate(from: string, targets: string[], body: string) {
+    const now = this.now();
+    for (const to of targets) {
+      const key = `${from}->${to}`;
+      const b = this.dmBuckets.get(key);
+      let tokens = b?.tokens ?? DM_BURST;
+      let last = b?.last ?? now;
+      const refill = Math.floor((now - last) / DM_REFILL_MS);
+      if (refill > 0) { tokens = Math.min(DM_BURST, tokens + refill); last += refill * DM_REFILL_MS; }
+      const recent = (this.dmRecent.get(key) ?? []).filter(x => now - x.at < DM_REPEAT_MS);
+      if (recent.some(x => x.body === body)) throw new ByobError('E_DM_DUPLICATE', `the same message was already sent to ${to} within ${DM_REPEAT_MS / 60_000} minutes`);
+      if (tokens < 1) throw new ByobError('E_DM_RATE_LIMIT', `${from} has used its burst to ${to}; one message per ${DM_REFILL_MS / 60_000} minutes after that`);
+      this.dmBuckets.set(key, { tokens: tokens - 1, last });
+      this.dmRecent.set(key, recent);
+    }
+  }
+
+  private noteDm(from: string, targets: string[], body: string) {
+    const now = this.now();
+    for (const to of targets) {
+      const key = `${from}->${to}`;
+      const recent = (this.dmRecent.get(key) ?? []).filter(x => now - x.at < DM_REPEAT_MS);
+      recent.push({ body, at: now });
+      this.dmRecent.set(key, recent);
     }
   }
 
@@ -313,12 +375,22 @@ export class Table extends EventEmitter {
 
   // ---------- reading ----------
   canSee(e: Entry, viewer: string): boolean {
+    // Direct messages are filtered here, before any `visibility` override: a `*.*` pattern opts a
+    // seat into the floor plane, never into other seats' private channels. Only `read_dm_all` does.
+    if (e.kind === 'dm') return this.canSeeDm(e, viewer);
     if (e.seat === viewer || GOVERNANCE.has(e.kind)) return true;
     const v = this.seats.get(viewer);
     if (!v) return false;
     const override = this.cfg.visibility?.[viewer];
     if (override) return matchVisibility(override, e);
     return this.policy.visible(e, viewer);
+  }
+
+  /** Sender, named recipients, or a seat whose owner signed `grants.read_dm_all`. Everyone else: 404. */
+  private canSeeDm(e: Entry, viewer: string): boolean {
+    if (e.seat === viewer) return true;
+    if ((e.to ?? []).some(a => a === '@' + viewer)) return true;
+    return this.seats.get(viewer)?.card.grants?.read_dm_all === true;
   }
 
   prefix() {
@@ -349,7 +421,7 @@ export class Table extends EventEmitter {
     const prefix = this.prefix();
     return {
       protocol: PROTOCOL, table: this.cfg.id, seat: viewer, prefix, prefix_hash: sha256(canonical(prefix)), tail, cursor,
-      floor: { holder: this.holder, you_have_floor: this.holder === viewer, grant_seq: this.grantSeq, max_chars: this.maxChars },
+      floor: { holder: this.holder, you_have_floor: this.holder === viewer, grant_seq: this.grantSeq, max_chars: this.maxChars, round: this.roundNo },
       status: this.status,
       my_tasks: [...this.tasks.values()].filter(t => t.executor === viewer || t.proposer === viewer),
     };

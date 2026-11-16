@@ -9,6 +9,17 @@
     "bot": { "type": "string", "description": "Bot product / implementation, e.g. 'minimax-code@0.6.5'" },
     "description": { "type": "string", "maxLength": 2000 },
     "proxy": { "type": "boolean", "description": "True when a human or script stands in for a product without an open interface. Must be shown to every seat." },
+    "grants": {
+      "type": "object",
+      "description": "Extension (convene): privileges the owner signs for this seat. Every field defaults to false and is never derived from attendance — a deployer cannot grant these on the owner's behalf.",
+      "additionalProperties": false,
+      "properties": {
+        "speak_anytime": { "type": "boolean", "description": "May post on the floor plane without holding it. Audited in the ledger." },
+        "reset_depth": { "type": "boolean", "description": "May reset the bot-depth counter, keeping a table alive past max_bot_depth. Keeps the table from ever ending; grant sparingly." },
+        "read_dm_all": { "type": "boolean", "description": "May read every direct message on the ledger, not only its own. Must be signed explicitly; never implied by being human or live." },
+        "veto": { "type": "boolean", "description": "May block one round. Audited in the ledger." }
+      }
+    },
     "capabilities": {
       "type": "array",
       "items": {

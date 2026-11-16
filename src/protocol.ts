@@ -3,12 +3,20 @@ export const PROTOCOL = 'byob/0.1' as const;
 
 export type Kind =
   | 'system' | 'say' | 'pass' | 'raise_hand' | 'proposal' | 'decision'
-  | 'approval' | 'rejection' | 'status' | 'receipt' | 'verify';
+  | 'approval' | 'rejection' | 'status' | 'receipt' | 'verify' | 'dm';
 
 export interface Effect { owner: string; resource: string; action: string; args?: Record<string, unknown> }
 
+/** Privileges the owner signs into the seat's card. Never derived from attendance (convene extension). */
+export interface Grants {
+  speak_anytime?: boolean;
+  reset_depth?: boolean;
+  read_dm_all?: boolean;
+  veto?: boolean;
+}
+
 export interface Capability { resource: string; actions: string[]; requires_approval?: boolean; auto_approve?: boolean }
-export interface CapabilityCard { bot: string; description?: string; proxy?: boolean; capabilities: Capability[] }
+export interface CapabilityCard { bot: string; description?: string; proxy?: boolean; capabilities: Capability[]; grants?: Grants }
 
 export interface Entry {
   seq: number;
@@ -28,10 +36,12 @@ export interface Entry {
   artifact?: unknown;
   data?: Record<string, unknown>;
   budget?: { tokens_used?: number };
+  /** Convene extension: decisions already on the ledger when this entry landed. Set by Table Core. */
+  round?: number;
   ts?: string;
 }
 
-export type PostKind = 'say' | 'pass' | 'raise_hand' | 'proposal' | 'decision' | 'status' | 'receipt' | 'verify';
+export type PostKind = 'say' | 'pass' | 'raise_hand' | 'proposal' | 'decision' | 'status' | 'receipt' | 'verify' | 'dm';
 export interface PostRequest {
   kind: PostKind;
   to?: string[];
@@ -105,7 +115,7 @@ export interface Projection {
   prefix_hash: string;
   tail: Entry[];
   cursor: number;
-  floor: { holder: string | null; you_have_floor: boolean; grant_seq: number | null; max_chars: number };
+  floor: { holder: string | null; you_have_floor: boolean; grant_seq: number | null; max_chars: number; round: number };
   status: 'open' | 'closed';
   my_tasks: Task[];
 }
@@ -129,6 +139,8 @@ export const ERRORS = {
   E_NOT_FOUND: 404,
   E_NO_TERMINATION: 422,
   E_CONFIG: 422,
+  E_DM_RATE_LIMIT: 429, // convene: direct messages are rate-limited per seat pair
+  E_DM_DUPLICATE: 409, // convene: the same body to the same seat within 10 minutes
   E_DISCLOSURE: 451, // raised client-side by the seat SDK, never by the table
   E_INTERNAL: 500,
 } as const;

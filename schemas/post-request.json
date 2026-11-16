@@ -6,7 +6,7 @@
   "required": ["kind"],
   "additionalProperties": false,
   "properties": {
-    "kind": { "enum": ["say", "pass", "raise_hand", "proposal", "decision", "status", "receipt", "verify"] },
+    "kind": { "enum": ["say", "pass", "raise_hand", "proposal", "decision", "status", "receipt", "verify", "dm"] },
     "to": { "type": "array", "items": { "$ref": "common.json#/$defs/address" } },
     "reply_to": { "type": "integer", "minimum": 1 },
     "body": { "type": "string", "maxLength": 100000 },

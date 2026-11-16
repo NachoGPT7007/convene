@@ -27,7 +27,8 @@
         "holder": { "type": ["string", "null"] },
         "you_have_floor": { "type": "boolean" },
         "grant_seq": { "type": ["integer", "null"] },
-        "max_chars": { "type": "integer" }
+        "max_chars": { "type": "integer" },
+        "round": { "type": "integer", "minimum": 0, "description": "Extension (convene): decisions landed so far. Round N of the table is entries with round == N-1." }
       }
     },
     "status": { "enum": ["open", "closed"] },
