@@ -48,6 +48,30 @@ export function checkProxy(proxy: string | undefined, gitPinnedDirect: boolean):
 
 export interface ProbeResult { ok: boolean; detail: string }
 
+/** What a table host answers at `/v0.1`: its protocol and how many tables it holds. */
+export interface EndpointProbe { ok: boolean; protocol?: string; tables?: number; error?: string }
+
+export function checkEndpoint(url: string, r: EndpointProbe): Check {
+  if (!r.ok) return { name: 'endpoint', status: 'fail', detail: `${url} unreachable: ${r.error ?? 'no response'}` };
+  if (r.protocol !== 'byob/0.1') return { name: 'endpoint', status: 'warn', detail: `${url} answers, but protocol is "${r.protocol ?? 'missing'}" (expected byob/0.1)` };
+  return { name: 'endpoint', status: 'ok', detail: `${url} → ${r.protocol}, ${r.tables ?? 0} table(s) open` };
+}
+
+/**
+ * Ask a host who it is. Used both directly and through whatever proxy sits in front of it, which is
+ * the point: if this passes, the proxy path, HEAD/GET handling and the protocol version all agree.
+ */
+export async function probeEndpoint(base: string): Promise<EndpointProbe> {
+  try {
+    const res = await fetch(base.replace(/\/+$/, '') + '/v0.1', { signal: AbortSignal.timeout(5000) });
+    const body = (await res.json()) as { protocol?: string; tables?: number };
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true, protocol: body.protocol, tables: body.tables };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 /**
  * Whether both roads to github are open right now. Nothing is cached and nothing is written: on a
  * network that changes, "direct failed half an hour ago" is not a fact worth remembering.

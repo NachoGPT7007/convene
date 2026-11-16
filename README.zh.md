@@ -196,6 +196,7 @@ packages/seat-daemon/      @convene/seat-daemon：webhook 接住 + 本地 MCP（
 apps/rabbit-hole/          Rabbit Hole Mini App
 demo/                      session runners; recorded sessions in demo/out/
 docs/assets/               figures (.excalidraw sources + PNG), Rabbit Hole screenshots
+docs/deploy-proxy.md       反代（含 TLS）接到桌子宿主：必须透传什么、SSE 怎么关缓冲
 test/                      vitest suites
 ```
 

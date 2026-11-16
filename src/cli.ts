@@ -8,7 +8,7 @@ import { createTableServer } from './server.js';
 import { generateOwnerKeys } from './crypto.js';
 import { Owner, SeatClient, createTable, renderPrefix, renderTail } from './client.js';
 import { collectDms, formatInbox } from './inbox.js';
-import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv, checkGithub, probeGithub } from './doctor.js';
+import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv, checkGithub, probeGithub, checkEndpoint, probeEndpoint } from './doctor.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -38,7 +38,7 @@ async function dmInbox(flags: Record<string, string>) {
 
 const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream reference CLI)
 
-  convene serve [--port 7341] [--data ./data]
+  convene serve [--port 7341] [--host 127.0.0.1] [--data ./data]
   convene keygen <owner-id> --out owner.json         Ed25519 owner key (keep private)
   convene create <table-config.json>                 prints admin token
   convene join <table> --owner owner.json --seat <id> [--role r] [--bot name] [--card card.json] [--human] --out seat.json
@@ -50,7 +50,9 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
   convene mcp                                        MCP stdio bridge (env BYOB_URL, BYOB_TABLE, BYOB_OWNER_KEY_FILE)
-  convene doctor [--port 7341] [--data ./data] [--github]   read-only checks; --github measures both roads
+  convene doctor [--port 7341] [--data ./data] [--url base] [--github]
+                                                     read-only checks; --github measures both roads,
+                                                     --url verifies a host (directly or via a proxy)
 
   \`byob\` is kept as an alias for every subcommand above.
 `;
@@ -58,9 +60,28 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
 async function run() {
   switch (cmd) {
     case 'serve': {
-      const host = new TableHost(new JsonlStore(flags.data ?? './data'));
+      const dataDir = flags.data ?? './data';
       const port = Number(flags.port ?? 7341);
-      createTableServer(host).listen(port, '127.0.0.1', () => console.log(`convene table host on http://127.0.0.1:${port}/v0.1 (data: ${flags.data ?? './data'})`));
+      const bind = flags.host ?? '127.0.0.1';
+      const host = new TableHost(new JsonlStore(dataDir));
+      const server = createTableServer(host);
+      server.listen(port, bind, () => {
+        console.log(`convene table host on http://${bind}:${port}/v0.1 (data: ${dataDir})`);
+        console.log(`  health: GET http://${bind}:${port}/v0.1`);
+        if (bind === '0.0.0.0' || bind === '::') {
+          // Everything is bearer-token guarded, but the surface is now reachable from the network:
+          // put a proxy in front that terminates TLS and, for humans, adds its own auth.
+          console.log('  warning: bound to all interfaces. Put a TLS proxy in front before exposing it.');
+        }
+      });
+      // A table host is the single writer: close it cleanly so the ledger's last append lands whole.
+      for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+        process.on(sig, () => {
+          console.log(`\nconvene: ${sig}, closing the host`);
+          server.close(() => process.exit(0));
+          setTimeout(() => process.exit(0), 3000).unref();
+        });
+      }
       return;
     }
     case 'keygen': {
@@ -109,6 +130,7 @@ async function run() {
       });
       // --github measures both roads instead of guessing: this network changes, so the answer does too.
       if (flags.github) checks.push(checkGithub(probeGithub(6), proxy ? probeGithub(6, proxy) : null));
+      if (flags.url) checks.push(checkEndpoint(flags.url, await probeEndpoint(flags.url)));
       console.log(renderChecks(checks));
       if (checks.some(c => c.status === 'fail')) process.exitCode = 1;
       return;

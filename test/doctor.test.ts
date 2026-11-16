@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  checkNode, checkProxy, checkNoProxy, checkPort, checkData, checkSchemas, checkGithub,
+  checkNode, checkProxy, checkNoProxy, checkPort, checkData, checkSchemas, checkGithub, checkEndpoint,
   runChecks, renderChecks, type DoctorInput,
 } from '../src/doctor.js';
 
@@ -66,6 +66,12 @@ describe('doctor', () => {
     expect(checkGithub(bad('failed (timeout)'), ok('HTTP 200 in 3s')).detail).toMatch(/leave git on the proxy/);
     expect(checkGithub(bad('x'), null).status).toBe('fail');
     expect(checkGithub(bad('x'), bad('y')).detail).toMatch(/neither path reached github/);
+  });
+
+  it('verifies a host, directly or through a proxy, and notices a protocol mismatch', () => {
+    expect(checkEndpoint('http://127.0.0.1:7341', { ok: true, protocol: 'byob/0.1', tables: 2 }).detail).toMatch(/2 table\(s\) open/);
+    expect(checkEndpoint('https://x', { ok: false, error: 'ECONNREFUSED' }).status).toBe('fail');
+    expect(checkEndpoint('https://x', { ok: true, protocol: 'other/9' }).status).toBe('warn');
   });
 
   it('summarises into a readable report with counts', () => {
