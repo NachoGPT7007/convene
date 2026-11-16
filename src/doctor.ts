@@ -33,8 +33,8 @@ export function checkSchemas(): Check {
 }
 
 /**
- * A proxy in the environment is not a problem by itself; a proxy that git actually uses is.
- * Git's GnuTLS handshake to github.com fails through this proxy, so doctor asks for the pin.
+ * A proxy in the environment is not a problem by itself. Whether git can reach github through it
+ * changes with the network, so this only asks the question; `checkGithub` answers it by measuring.
  */
 export function checkProxy(proxy: string | undefined, gitPinnedDirect: boolean): Check {
   if (!proxy) return { name: 'proxy', status: 'ok', detail: 'no https_proxy in the environment' };
@@ -42,8 +42,33 @@ export function checkProxy(proxy: string | undefined, gitPinnedDirect: boolean):
   return {
     name: 'proxy',
     status: 'warn',
-    detail: `${proxy} is set and git will use it. Clone and push to github fail their TLS handshake through this proxy; pin git instead: git config --global http.https://github.com/.proxy ""`,
+    detail: `${proxy} is set and git will use it. Whether that works depends on the network today: run \`convene doctor --github\` to measure both paths before pinning anything.`,
   };
+}
+
+export interface ProbeResult { ok: boolean; detail: string }
+
+/**
+ * Whether both roads to github are open right now. Nothing is cached and nothing is written: on a
+ * network that changes, "direct failed half an hour ago" is not a fact worth remembering.
+ */
+export function checkGithub(direct: ProbeResult, viaProxy: ProbeResult | null): Check {
+  if (!direct.ok && !viaProxy?.ok) {
+    return {
+      name: 'github', status: 'fail',
+      detail: `neither path reached github — direct: ${direct.detail}; proxy: ${viaProxy?.detail ?? 'no proxy configured'}. Nothing to pin; measure again when the network settles.`,
+    };
+  }
+  if (viaProxy && !viaProxy.ok) {
+    return {
+      name: 'github', status: 'ok',
+      detail: `direct ${direct.detail}; proxy failed (${viaProxy.detail}) → pin git to direct: git config --global http.https://github.com/.proxy ""`,
+    };
+  }
+  if (!direct.ok && viaProxy?.ok) {
+    return { name: 'github', status: 'info', detail: `direct failed (${direct.detail}); proxy ${viaProxy.detail} → leave git on the proxy` };
+  }
+  return { name: 'github', status: 'ok', detail: `direct ${direct.detail}; proxy ${viaProxy?.detail} → either path works today` };
 }
 
 /** Design risk 1: a proxy that also swallows the tailnet turns every cross-machine call into a timeout. */
@@ -131,6 +156,25 @@ export function portIsFree(port: number): Promise<boolean> {
 export function gitPinnedDirectForGithub(): boolean {
   const r = spawnSync('git', ['config', '--get', 'http.https://github.com/.proxy'], { encoding: 'utf8' });
   return r.status === 0 && (r.stdout ?? '').trim() === '';
+}
+
+/**
+ * Measure one road to github with curl: `proxy` given means through it, omitted means direct.
+ * `--noproxy '*'` makes sure an environment proxy cannot answer for the direct case.
+ */
+export function probeGithub(timeoutSec = 6, proxy?: string): ProbeResult {
+  const args = ['-m', String(timeoutSec), '-sS', '-o', '/dev/null', '-w', '%{http_code} %{time_total}'];
+  if (proxy) args.push('-x', proxy); else args.push('--noproxy', '*');
+  args.push('https://api.github.com/');
+  const r = spawnSync('curl', args, { encoding: 'utf8' });
+  const out = (r.stdout ?? '').trim();
+  const [code, time] = out.split(/\s+/);
+  if (!code || code === '000') {
+    const why = (r.stderr ?? '').trim().split('\n').filter(Boolean).pop() ?? 'no response';
+    return { ok: false, detail: `failed (${why.replace(/^curl: /, '').slice(0, 120)})` };
+  }
+  // Reaching github and being refused by it is not the same as reaching it.
+  return { ok: /^[23]/.test(code), detail: `HTTP ${code} in ${time}s` };
 }
 
 /** A partner that does not exist yet is writable as long as its parent is. */

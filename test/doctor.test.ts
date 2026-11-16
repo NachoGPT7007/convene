@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  checkNode, checkProxy, checkNoProxy, checkPort, checkData, checkSchemas,
+  checkNode, checkProxy, checkNoProxy, checkPort, checkData, checkSchemas, checkGithub,
   runChecks, renderChecks, type DoctorInput,
 } from '../src/doctor.js';
 
@@ -36,7 +36,7 @@ describe('doctor', () => {
     expect(checkProxy(undefined, false).status).toBe('ok');
     const warned = checkProxy('http://172.26.48.1:7890', false);
     expect(warned.status).toBe('warn');
-    expect(warned.detail).toMatch(/http\.https:\/\/github\.com\/\.proxy/);
+    expect(warned.detail).toMatch(/convene doctor --github/);
     expect(checkProxy('http://172.26.48.1:7890', true).status).toBe('ok');
   });
 
@@ -53,6 +53,19 @@ describe('doctor', () => {
     expect(checkPort(7341, false).status).toBe('warn');
     expect(checkData('./data', true).status).toBe('ok');
     expect(checkData('/nope', false).status).toBe('fail');
+  });
+
+  it('recommends pinning only when the direct road works and the proxy does not', () => {
+    const ok = (d: string) => ({ ok: true, detail: d });
+    const bad = (d: string) => ({ ok: false, detail: d });
+
+    expect(checkGithub(ok('HTTP 200 in 1.2s'), ok('HTTP 200 in 1.4s')).detail).toMatch(/either path works/);
+    const pin = checkGithub(ok('HTTP 200 in 1.2s'), bad('failed (timeout)'));
+    expect(pin.status).toBe('ok');
+    expect(pin.detail).toMatch(/pin git to direct/);
+    expect(checkGithub(bad('failed (timeout)'), ok('HTTP 200 in 3s')).detail).toMatch(/leave git on the proxy/);
+    expect(checkGithub(bad('x'), null).status).toBe('fail');
+    expect(checkGithub(bad('x'), bad('y')).detail).toMatch(/neither path reached github/);
   });
 
   it('summarises into a readable report with counts', () => {

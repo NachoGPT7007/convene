@@ -8,7 +8,7 @@ import { createTableServer } from './server.js';
 import { generateOwnerKeys } from './crypto.js';
 import { Owner, SeatClient, createTable, renderPrefix, renderTail } from './client.js';
 import { collectDms, formatInbox } from './inbox.js';
-import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv } from './doctor.js';
+import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv, checkGithub, probeGithub } from './doctor.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -50,7 +50,7 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
   convene mcp                                        MCP stdio bridge (env BYOB_URL, BYOB_TABLE, BYOB_OWNER_KEY_FILE)
-  convene doctor [--port 7341] [--data ./data]       read-only checks: node, schemas, port, proxy, tailnet, data
+  convene doctor [--port 7341] [--data ./data] [--github]   read-only checks; --github measures both roads
 
   \`byob\` is kept as an alias for every subcommand above.
 `;
@@ -94,18 +94,21 @@ async function run() {
     case 'doctor': {
       const port = Number(flags.port ?? 7341);
       const dataDir = flags.data ?? './data';
+      const proxy = proxyFromEnv();
       const checks = runChecks({
         node: process.version,
         schemas: checkSchemas(),
         port,
         portFree: await portIsFree(port),
-        proxy: proxyFromEnv(),
+        proxy,
         gitPinnedDirect: gitPinnedDirectForGithub(),
         noProxy: noProxyFromEnv(),
         tailnet: tailnetAddresses(),
         dataDir,
         dataWritable: dataDirWritable(dataDir),
       });
+      // --github measures both roads instead of guessing: this network changes, so the answer does too.
+      if (flags.github) checks.push(checkGithub(probeGithub(6), proxy ? probeGithub(6, proxy) : null));
       console.log(renderChecks(checks));
       if (checks.some(c => c.status === 'fail')) process.exitCode = 1;
       return;
