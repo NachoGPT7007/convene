@@ -1,5 +1,8 @@
 // HTTP + SSE transport for BYOB v0.1.
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { TableHost } from './host.js';
 import { ByobError, PROTOCOL, type Entry } from './protocol.js';
 
@@ -7,6 +10,17 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json', 'byob-protocol': PROTOCOL });
   res.end(JSON.stringify(body));
 };
+
+/** The dashboard is one static file next to the source tree. Read per request: editing it must not need a restart. */
+function uiHtml(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 4; i++) {
+    const file = join(dir, 'web', 'index.html');
+    if (existsSync(file)) return readFileSync(file, 'utf8');
+    dir = dirname(dir);
+  }
+  return null;
+}
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -22,7 +36,16 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number } = {
       const url = new URL(req.url ?? '/', 'http://x');
       const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
       const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-      if (parts[0] !== 'v0.1') return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'use /v0.1/...' } });
+      if (parts[0] !== 'v0.1') {
+        // Root is the dashboard: a static page that only ever talks to /v0.1 with a seat token.
+        if (req.method === 'GET' && parts.length === 0) {
+          const html = uiHtml();
+          if (html === null) return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'dashboard not found (web/index.html missing)' } });
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+          return res.end(html);
+        }
+        return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'use /v0.1/...' } });
+      }
       if (req.method === 'GET' && parts.length === 1) return json(res, 200, { protocol: PROTOCOL, tables: host.tables.size });
       if (parts[1] !== 'tables') throw new ByobError('E_NOT_FOUND', url.pathname);
       if (req.method === 'POST' && parts.length === 2) {

@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>convene · 桌面</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #161a20; --panel-2: #1c2129; --line: #262d38;
+    --fg: #e6e9ef; --muted: #8b93a1; --accent: #4d6bfe;
+    --say: #6b7686; --decision: #4d6bfe; --proposal: #a78bfa; --dm: #f0a94c;
+    --ok: #3ecf8e; --warn: #f0a94c; --err: #f2646c; --system: #58606e;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --line: #e2e6ec;
+      --fg: #14181f; --muted: #626b7a; --system: #9aa3b2;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --line: #e2e6ec;
+    --fg: #14181f; --muted: #626b7a; --system: #9aa3b2;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1115; --panel: #161a20; --panel-2: #1c2129; --line: #262d38;
+    --fg: #e6e9ef; --muted: #8b93a1; --system: #58606e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+  }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header {
+    position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 14px;
+    align-items: center; padding: 12px 18px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+  }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); font-size: 12px; color: var(--muted);
+  }
+  .pill b { color: var(--fg); font-weight: 600; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .dot.live { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .dot.offline { background: var(--err); }
+  .spacer { flex: 1; }
+  button, .btn {
+    font: inherit; font-size: 12px; color: var(--fg); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 5px 11px; cursor: pointer;
+  }
+  button:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  main { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; padding: 16px 18px 8px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .panel > h2 {
+    margin: 0; padding: 11px 14px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel > h2 .count { margin-left: auto; font-weight: 400; }
+  .pad { padding: 10px 12px; }
+
+  /* seats */
+  .seat { display: grid; grid-template-columns: 34px 1fr; gap: 10px; padding: 9px 12px; align-items: center; border-bottom: 1px solid var(--line); }
+  .seat:last-child { border-bottom: 0; }
+  .seat.floor { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+  .badge {
+    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--c, var(--accent)) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 45%, transparent);
+    color: var(--c, var(--accent)); font-weight: 700; font-size: 14px; overflow: hidden;
+  }
+  .badge svg { width: 24px; height: 24px; display: block; }
+  .seat .name { font-weight: 600; }
+  .seat .meta { color: var(--muted); font-size: 11.5px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 10.5px; color: var(--muted); }
+  .tag.grant { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); color: var(--warn); }
+  .tag.human { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); }
+
+  /* ledger */
+  #tail { max-height: calc(100vh - 190px); overflow: auto; }
+  .entry { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); }
+  .entry:last-child { border-bottom: 0; }
+  .entry .seq { color: var(--muted); font-size: 11.5px; padding-top: 2px; }
+  .entry .who { font-weight: 600; font-size: 12.5px; }
+  .entry .kind { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .entry .body { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+  .entry.system .body { color: var(--muted); font-size: 12.5px; }
+  .entry.decision { box-shadow: inset 3px 0 0 var(--decision); }
+  .entry.proposal { box-shadow: inset 3px 0 0 var(--proposal); }
+  .entry.dm { box-shadow: inset 3px 0 0 var(--dm); background: color-mix(in srgb, var(--dm) 6%, transparent); }
+  .entry.verify { box-shadow: inset 3px 0 0 var(--ok); }
+  .entry.receipt, .entry.status { box-shadow: inset 3px 0 0 var(--warn); }
+  .lock { color: var(--dm); }
+  .empty { padding: 22px 14px; color: var(--muted); text-align: center; font-size: 12.5px; }
+
+  /* tasks */
+  #tasks { margin: 0 18px 18px; }
+  .task { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .task:last-child { border-bottom: 0; }
+  .state { border-radius: 5px; padding: 0 6px; font-size: 11px; border: 1px solid var(--line); color: var(--muted); }
+  .state.verified { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+  .state.awaiting_approval, .state.reported { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
+  .state.failed, .state.rejected { color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, var(--line)); }
+
+  /* setup */
+  #setup {
+    position: fixed; inset: 0; display: grid; place-items: center; z-index: 50;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(6px);
+  }
+  #setup[hidden] { display: none; }
+  .card { width: min(460px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+  .card h2 { margin: 0 0 4px; font-size: 16px; }
+  .card p { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; }
+  .card label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  .card input {
+    width: 100%; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+  }
+  .card .row { display: flex; gap: 10px; margin-top: 18px; }
+  .card .row button { flex: 1; padding: 8px; }
+  .card .err { color: var(--err); font-size: 12px; margin-top: 10px; min-height: 1em; }
+  .hint { color: var(--muted); font-size: 11.5px; margin-top: 14px; line-height: 1.5; }
+  .hint code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>convene <span>·</span> 桌面</h1>
+  <span class="pill">表 <b id="pTable">—</b></span>
+  <span class="pill">状态 <b id="pStatus">—</b></span>
+  <span class="pill">第 <b id="pRound">—</b> 轮</span>
+  <span class="pill">发言权 <b id="pFloor">—</b></span>
+  <span class="spacer"></span>
+  <span class="pill"><span class="dot" id="dot"></span><span id="link">未连接</span></span>
+  <button id="btnTheme" title="切换主题">主题</button>
+  <button id="btnSetup">设置</button>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>席位 <span class="count" id="seatCount"></span></h2>
+    <div id="seatList"></div>
+  </section>
+  <section class="panel">
+    <h2>账本 <span class="count" id="tailCount"></span></h2>
+    <div id="tail"><div class="empty">等待数据…</div></div>
+  </section>
+</main>
+
+<section class="panel" id="tasks">
+  <h2>我的任务 <span class="count" id="taskCount"></span></h2>
+  <div id="taskList"><div class="empty">没有指派给我的任务</div></div>
+</section>
+
+<div id="setup" hidden>
+  <div class="card">
+    <h2>接上一张桌子</h2>
+    <p>看板只读取投影，不发任何消息。token 只存在这个浏览器里。</p>
+    <label for="fTable">表 id</label>
+    <input id="fTable" placeholder="main" autocomplete="off">
+    <label for="fToken">席位 token（<code>*.seat.json</code> 里的 <code>token</code>）</label>
+    <input id="fToken" type="password" placeholder="粘贴 seat token" autocomplete="off">
+    <label for="fSeat">你的席位（可选，用于高亮自己的发言）</label>
+    <input id="fSeat" placeholder="alice" autocomplete="off">
+    <div class="err" id="setupErr"></div>
+    <div class="row">
+      <button id="btnCancel">取消</button>
+      <button id="btnConnect" style="background:var(--accent); border-color:var(--accent); color:#fff">连接</button>
+    </div>
+    <div class="hint">
+      找不到 token？在宿主那台机器上跑
+      <code>cat ~/convene-data/seats/alice.seat.json</code>。
+      页面走相对路径 <code>/v0.1</code>，放在反代后面也能直接用。
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const SKEY = 'convene.dashboard';
+
+  let cfg = { table: '', token: '', seat: '' };
+  let abort = null;
+  let refreshTimer = 0;
+
+  // ---- config -------------------------------------------------------------
+  function loadCfg() {
+    const params = new URLSearchParams(location.search);
+    // ?reset=1 forgets the saved seat so a different token can be entered cleanly.
+    if (params.has('reset')) { try { localStorage.removeItem(SKEY); } catch {} }
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { saved = {}; }
+    cfg = {
+      table: params.get('table') || saved.table || '',
+      token: params.has('reset') ? '' : (saved.token || ''),
+      seat: params.get('seat') || saved.seat || '',
+    };
+  }
+  function saveCfg() {
+    try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch {}
+  }
+
+  // ---- badge: markup from the ledger is untrusted until it is scrubbed -----
+  // Anything that can execute, fetch, or embed something else is dropped. A badge is a drawing;
+  // if it needs more than that to look right, it is asking for more trust than a card grants.
+  const BADGE_DROP = 'script, foreignObject, iframe, object, embed, animate, animateTransform, set, style, image, use, a';
+
+  function safeSvg(markup) {
+    let doc;
+    try { doc = new DOMParser().parseFromString(markup, 'image/svg+xml'); } catch { return null; }
+    const svg = doc && doc.documentElement;
+    if (!svg || svg.tagName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return null;
+    svg.querySelectorAll(BADGE_DROP).forEach((n) => n.remove());
+    svg.querySelectorAll('*').forEach((node) => {
+      for (const attr of Array.from(node.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on')) node.removeAttribute(attr.name);
+        // Only in-document references survive; javascript:, data: and remote URLs do not.
+        if (name === 'href' || name === 'xlink:href') {
+          if (!/^#[A-Za-z0-9_.:-]+$/.test(attr.value)) node.removeAttribute(attr.name);
+        }
+        if (name === 'style' && /url\s*\(|expression|import/i.test(attr.value)) node.removeAttribute(attr.name);
+      }
+    });
+    return document.importNode(svg, true);
+  }
+
+  function badgeNode(seat) {
+    const el = document.createElement('span');
+    el.className = 'badge';
+    const b = seat.badge || {};
+    if (b.color && /^#[0-9a-f]{6}$/i.test(b.color)) el.style.setProperty('--c', b.color);
+    const svg = b.svg ? safeSvg(b.svg) : null;
+    if (svg) el.appendChild(svg);
+    else el.textContent = String(seat.seat || '?').slice(0, 1).toUpperCase();
+    return el;
+  }
+
+  // ---- api ----------------------------------------------------------------
+  const tablePath = (p) => `/v0.1/tables/${encodeURIComponent(cfg.table)}/${p}`;
+
+  async function getJson(path) {
+    const res = await fetch(tablePath(path), { headers: { authorization: 'Bearer ' + cfg.token } });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    if (!res.ok) {
+      const err = new Error((body && body.error && body.error.message) || ('HTTP ' + res.status));
+      err.code = body && body.error && body.error.code;
+      throw err;
+    }
+    return body;
+  }
+
+  // ---- render -------------------------------------------------------------
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+
+  function renderSeats(seats, floorHolder) {
+    const box = $('seatList');
+    box.replaceChildren();
+    $('seatCount').textContent = seats.length + ' 席';
+    if (!seats.length) { box.appendChild(el('div', 'empty', '还没有席位')); return; }
+    for (const s of seats) {
+      const row = el('div', 'seat' + (s.seat === floorHolder ? ' floor' : ''));
+      row.appendChild(badgeNode(s));
+      const right = el('div');
+      const name = el('div', 'name', '@' + s.seat);
+      if (cfg.seat && s.seat === cfg.seat) {
+        const me = el('span', 'tag human', '我');
+        me.style.marginLeft = '6px';
+        name.appendChild(me);
+      }
+      right.appendChild(name);
+      const meta = el('div', 'meta');
+      meta.appendChild(el('span', 'tag', s.owner));
+      meta.appendChild(el('span', 'tag' + (s.kind === 'human' ? ' human' : ''), s.kind));
+      if (s.bot) meta.appendChild(el('span', 'tag', s.bot));
+      if (s.proxy) meta.appendChild(el('span', 'tag grant', 'PROXY'));
+      const g = s.grants || {};
+      for (const k of ['speak_anytime', 'reset_depth', 'read_dm_all', 'veto']) {
+        if (g[k] === true) meta.appendChild(el('span', 'tag grant', k));
+      }
+      right.appendChild(meta);
+      row.appendChild(right);
+      box.appendChild(row);
+    }
+  }
+
+  function renderTail(tail) {
+    const box = $('tail');
+    box.replaceChildren();
+    $('tailCount').textContent = tail.length + ' 条';
+    if (!tail.length) { box.appendChild(el('div', 'empty', '账本还是空的')); return; }
+    for (const e of tail) {
+      const row = el('div', 'entry ' + e.kind);
+      row.appendChild(el('div', 'seq mono', '#' + e.seq));
+      const right = el('div');
+      const head = el('div');
+      head.appendChild(el('span', 'who', e.seat === 'core' ? 'core' : '@' + e.seat));
+      let label = e.kind + (e.event ? '/' + e.event : '');
+      if (e.task) label += ' ' + e.task;
+      if (e.state) label += ' → ' + e.state;
+      if (e.result) label += ' ' + e.result;
+      head.appendChild(el('span', 'kind', label));
+      right.appendChild(head);
+      if (e.body) {
+        const body = el('div', 'body');
+        if (e.kind === 'dm') body.appendChild(el('span', 'lock', '[私信] '));
+        body.appendChild(document.createTextNode(e.body));
+        right.appendChild(body);
+      }
+      if (e.to && e.to.length) {
+        const to = el('div', 'kind', '→ ' + e.to.join(', '));
+        to.style.marginTop = '3px';
+        right.appendChild(to);
+      }
+      row.appendChild(right);
+      box.appendChild(row);
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function renderTasks(tasks) {
+    const box = $('taskList');
+    box.replaceChildren();
+    $('taskCount').textContent = tasks.length ? tasks.length + ' 项' : '';
+    if (!tasks.length) { box.appendChild(el('div', 'empty', '没有指派给我的任务')); return; }
+    for (const t of tasks) {
+      const row = el('div', 'task');
+      row.appendChild(el('span', 'mono', t.id));
+      row.appendChild(el('span', 'state ' + t.state, t.state));
+      const detail = el('span', '', (t.executor ? '执行 ' + t.executor : '待指派') + ' · ' + (t.owner || ''));
+      detail.style.color = 'var(--muted)';
+      row.appendChild(detail);
+      box.appendChild(row);
+    }
+  }
+
+  function render(p) {
+    $('pTable').textContent = p.table;
+    $('pStatus').textContent = p.status === 'open' ? '进行中' : '已关闭';
+    $('pRound').textContent = String((p.floor.round || 0) + 1);
+    $('pFloor').textContent = p.floor.holder ? '@' + p.floor.holder + (p.floor.you_have_floor ? '（你）' : '') : '空';
+    renderSeats(p.prefix.seats || [], p.floor.holder);
+    renderTail(p.tail || []);
+    renderTasks(p.my_tasks || []);
+  }
+
+  function setLink(state, text) {
+    const dot = $('dot');
+    dot.className = 'dot ' + state;
+    $('link').textContent = text;
+  }
+
+  // ---- live updates over SSE ---------------------------------------------
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { refresh().catch(() => {}); }, 200);
+  }
+
+  async function refresh() {
+    const p = await getJson('projection?since=0');
+    render(p);
+    return p;
+  }
+
+  async function listen() {
+    if (abort) abort.abort();
+    abort = new AbortController();
+    setLink('', '连接中…');
+    try {
+      const res = await fetch(tablePath('events'), {
+        headers: { authorization: 'Bearer ' + cfg.token },
+        signal: abort.signal,
+      });
+      if (!res.ok || !res.body) throw new Error('events HTTP ' + res.status);
+      setLink('live', '实时');
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          if (/^event:/m.test(block)) scheduleRefresh();
+        }
+      }
+      setLink('offline', '已断开');
+      setTimeout(listen, 3000);
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      setLink('offline', '已断开');
+      setTimeout(listen, 3000);
+    }
+  }
+
+  // ---- setup dialog -------------------------------------------------------
+  function showSetup(message) {
+    $('fTable').value = cfg.table || '';
+    $('fToken').value = cfg.token || '';
+    $('fSeat').value = cfg.seat || '';
+    $('setupErr').textContent = message || '';
+    $('setup').hidden = false;
+    setTimeout(() => ($('fTable').value ? $('fToken') : $('fTable')).focus(), 30);
+  }
+
+  async function connect() {
+    $('setupErr').textContent = '';
+    cfg.table = $('fTable').value.trim();
+    cfg.token = $('fToken').value.trim();
+    cfg.seat = $('fSeat').value.trim();
+    if (!cfg.table || !cfg.token) { $('setupErr').textContent = '表 id 和 token 都要填'; return; }
+    try {
+      await refresh();
+      saveCfg();
+      $('setup').hidden = true;
+      listen();
+    } catch (err) {
+      $('setupErr').textContent = err.message || String(err);
+    }
+  }
+
+  $('btnConnect').addEventListener('click', connect);
+  $('btnCancel').addEventListener('click', () => {
+    if (cfg.table && cfg.token) $('setup').hidden = true;
+  });
+  $('btnSetup').addEventListener('click', () => showSetup(''));
+  $('fToken').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+  $('fTable').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('fToken').focus(); });
+
+  // ---- theme --------------------------------------------------------------
+  const THEME_KEY = 'convene.theme';
+  const THEME_LABEL = { auto: '跟随系统', dark: '深色', light: '浅色' };
+
+  function applyTheme(t) {
+    if (t === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+    $('btnTheme').textContent = THEME_LABEL[t] || THEME_LABEL.auto;
+  }
+  function cycleTheme() {
+    let cur = 'auto';
+    try { cur = localStorage.getItem(THEME_KEY) || 'auto'; } catch {}
+    const next = cur === 'auto' ? 'dark' : cur === 'dark' ? 'light' : 'auto';
+    try { localStorage.setItem(THEME_KEY, next); } catch {}
+    applyTheme(next);
+  }
+  $('btnTheme').addEventListener('click', cycleTheme);
+  try { applyTheme(localStorage.getItem(THEME_KEY) || 'auto'); } catch { applyTheme('auto'); }
+
+  // ---- boot ---------------------------------------------------------------
+  loadCfg();
+  if (cfg.table && cfg.token) {
+    refresh().then(() => listen()).catch((err) => showSetup(err.code === 'E_UNAUTHORIZED' ? 'token 无效或已过期' : err.message));
+  } else {
+    showSetup('');
+  }
+})();
+</script>
+</body>
+</html>
