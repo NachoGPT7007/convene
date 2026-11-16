@@ -8,6 +8,7 @@ import { createTableServer } from './server.js';
 import { generateOwnerKeys } from './crypto.js';
 import { Owner, SeatClient, createTable, renderPrefix, renderTail } from './client.js';
 import { collectDms, formatInbox } from './inbox.js';
+import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv } from './doctor.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -49,6 +50,7 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
   convene mcp                                        MCP stdio bridge (env BYOB_URL, BYOB_TABLE, BYOB_OWNER_KEY_FILE)
+  convene doctor [--port 7341] [--data ./data]       read-only checks: node, schemas, port, proxy, tailnet, data
 
   \`byob\` is kept as an alias for every subcommand above.
 `;
@@ -89,6 +91,25 @@ async function run() {
     case 'propose': return console.log(JSON.stringify(await seatFrom(flags.seat).propose(pos.join(' '), JSON.parse(flags.effects))));
     case 'approve': return console.log(JSON.stringify(await loadOwner(flags.owner).decide(url, pos[0], pos[1], flags.reject ? 'reject' : 'approve', flags.reason)));
     case 'mcp': { const { main } = await import('./mcp.js'); return main(); }
+    case 'doctor': {
+      const port = Number(flags.port ?? 7341);
+      const dataDir = flags.data ?? './data';
+      const checks = runChecks({
+        node: process.version,
+        schemas: checkSchemas(),
+        port,
+        portFree: await portIsFree(port),
+        proxy: proxyFromEnv(),
+        gitPinnedDirect: gitPinnedDirectForGithub(),
+        noProxy: noProxyFromEnv(),
+        tailnet: tailnetAddresses(),
+        dataDir,
+        dataWritable: dataDirWritable(dataDir),
+      });
+      console.log(renderChecks(checks));
+      if (checks.some(c => c.status === 'fail')) process.exitCode = 1;
+      return;
+    }
     default: console.log(usage);
   }
 }
