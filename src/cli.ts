@@ -96,10 +96,12 @@ async function run() {
       const port = Number(flags.port ?? 7341);
       const bind = flags.host ?? '127.0.0.1';
       const host = new TableHost(new JsonlStore(dataDir));
-      const server = createTableServer(host);
+      // --no-local turns the operator view off entirely, for a host that only ever faces a proxy.
+      const server = createTableServer(host, { dataDir, disableLocal: flags['no-local'] === 'true' });
       server.listen(port, bind, () => {
         console.log(`convene table host on http://${bind}:${port}/v0.1 (data: ${dataDir})`);
         console.log(`  health: GET http://${bind}:${port}/v0.1`);
+        console.log(`  local:  GET http://${bind}:${port}/local/state (loopback only${flags['no-local'] === 'true' ? ', DISABLED' : ''})`);
         if (bind === '0.0.0.0' || bind === '::') {
           // Everything is bearer-token guarded, but the surface is now reachable from the network:
           // put a proxy in front that terminates TLS and, for humans, adds its own auth.

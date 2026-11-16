@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TableHost } from './host.js';
+import { scanLocal, isLoopback } from './local.js';
+import { buildTableConfig } from './init.js';
 import { ByobError, PROTOCOL, type Entry } from './protocol.js';
 
 const json = (res: ServerResponse, status: number, body: unknown) => {
@@ -30,12 +32,36 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new ByobError('E_SCHEMA', 'invalid JSON'); }
 }
 
-export function createTableServer(host: TableHost, opts: { tickMs?: number } = {}): Server {
+export function createTableServer(host: TableHost, opts: { tickMs?: number; dataDir?: string; disableLocal?: boolean } = {}): Server {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://x');
       const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
       const bearer = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+      // Local operator view and table creation. Loopback only: a proxied request is not this machine,
+      // and the payload includes seat tokens, which are the machine's own credentials.
+      if (parts[0] === 'local') {
+        // A reverse proxy runs on this machine too, so remoteAddress alone would let a proxied
+        // request look local. Any forwarding header means the request came through one: refuse.
+        const forwarded = req.headers['x-forwarded-for'] ?? req.headers['x-real-ip']
+          ?? req.headers['cf-connecting-ip'] ?? req.headers['forwarded'];
+        if (forwarded || !isLoopback(req.socket.remoteAddress) || opts.disableLocal) {
+          return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'local interface is only reachable directly from this machine' } });
+        }
+        if (!opts.dataDir) return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'no data directory configured' } });
+        if (req.method === 'GET' && parts[1] === 'state') return json(res, 200, scanLocal(opts.dataDir, host.tables));
+        // Creating a table needs no signature — only joining does. What it needs is everyone's public key.
+        // A full TableConfig is accepted as-is; the wizard's shorter form is expanded by init here,
+        // so the browser does not carry a second copy of the topology rules.
+        if (req.method === 'POST' && parts[1] === 'tables') {
+          const body = (await readBody(req)) as Record<string, unknown> & { topology?: unknown };
+          const cfg = body.topology ? body : buildTableConfig(body as never);
+          const { table, admin_token } = host.create(cfg as never);
+          return json(res, 201, { table: table.cfg.id, admin_token });
+        }
+        return json(res, 404, { error: { code: 'E_NOT_FOUND', message: `${req.method} ${url.pathname}` } });
+      }
+
       if (parts[0] !== 'v0.1') {
         // Root is the dashboard: a static page that only ever talks to /v0.1 with a seat token.
         if (req.method === 'GET' && parts.length === 0) {

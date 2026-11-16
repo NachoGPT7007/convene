@@ -185,6 +185,11 @@
   pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
     font: 11.5px/1.65 ui-monospace, Menlo, Consolas, monospace; overflow: auto; max-height: 240px;
     white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+
+  .scan-block { margin: 10px 0 2px; }
+  .scan-title { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
+  .scan-item { display: block; width: 100%; text-align: left; margin-bottom: 5px; font-size: 12px; }
+  .scan-owner { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); padding: 1px 0; }
 </style>
 </head>
 <body>
@@ -272,9 +277,11 @@
       <button id="ntCancel" type="button">关闭</button>
       <button id="ntGen" type="button" style="background:var(--accent);border-color:var(--accent);color:#fff">生成命令</button>
     </div>
+    <div class="err" id="ntErr2"></div>
     <pre class="cmd" id="ntOut" hidden></pre>
     <div class="row" id="ntCopyRow" hidden>
       <button id="ntCopy" type="button">复制命令</button>
+      <button id="ntCreate" type="button" style="background:var(--accent);border-color:var(--accent);color:#fff">现在就建</button>
     </div>
   </div>
 </div>
@@ -294,6 +301,9 @@
       <button id="btnCancel">取消</button>
       <button id="btnConnect" style="background:var(--accent); border-color:var(--accent); color:#fff">连接</button>
     </div>
+    <button id="btnScan" type="button" style="width:100%">发现本机：桌子 / 席位 / 密钥</button>
+    <div id="scanResult"></div>
+
     <div class="hint">
       <b>第一次用？最简单的方式</b><br>
       在跑桌子的那台机器上执行 <code>convene ui --seat seats/alice.seat.json</code>，
@@ -890,6 +900,120 @@
       setTimeout(() => { $('ntCopy').textContent = '复制命令'; }, 1500);
     } catch { $('ntCopy').textContent = '复制失败，手动选中'; }
   });
+
+
+  // ---- 扫描本机：桌子 / 席位 / owner 公钥 ---------------------------------
+  let localOwners = new Map();
+
+  async function fetchLocalState() {
+    const res = await fetch('/local/state', { cache: 'no-store' });
+    if (res.status === 404) throw new Error('本机接口不可用（经反代访问时它会被关掉，或用了 --no-local）');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  function renderScan(j, box) {
+    if (j.tables && j.tables.length) {
+      const blk = el('div', 'scan-block');
+      blk.appendChild(el('div', 'scan-title', '本机在跑的桌子'));
+      for (const t of j.tables) {
+        const b = el('button', 'scan-item', `${t.id} · ${t.topic || '（无主题）'} — ${t.seats.length} 席，${t.status}`);
+        b.type = 'button';
+        b.addEventListener('click', () => { $('fTable').value = t.id; $('fToken').focus(); });
+        blk.appendChild(b);
+      }
+      box.appendChild(blk);
+    }
+    if (j.seats && j.seats.length) {
+      const blk = el('div', 'scan-block');
+      blk.appendChild(el('div', 'scan-title', '本机的席位（点一下直接进去）'));
+      for (const st of j.seats) {
+        const b = el('button', 'scan-item', `${st.table} / @${st.seat}`);
+        b.type = 'button';
+        b.addEventListener('click', () => {
+          $('fTable').value = st.table;
+          $('fToken').value = st.token;
+          $('fSeat').value = st.seat;
+          connect();
+        });
+        blk.appendChild(b);
+      }
+      box.appendChild(blk);
+    }
+    if (j.owners && j.owners.length) {
+      const blk = el('div', 'scan-block');
+      blk.appendChild(el('div', 'scan-title', '本机的 owner 密钥（只显示公钥）'));
+      for (const o of j.owners) blk.appendChild(el('div', 'scan-owner', `${o.id} · ${o.publicKey.slice(0, 28)}…`));
+      box.appendChild(blk);
+    }
+    if (!box.children.length) box.appendChild(el('div', 'empty', '本机没有可用的桌子或席位'));
+  }
+
+  async function scanMachine() {
+    const box = $('scanResult');
+    box.replaceChildren(el('div', 'empty', '正在扫描…'));
+    try {
+      const j = await fetchLocalState();
+      localOwners = new Map((j.owners || []).map(o => [o.id, o.publicKey]));
+      box.replaceChildren();
+      renderScan(j, box);
+    } catch (err) {
+      box.replaceChildren(el('div', 'err', err.message || String(err)));
+    }
+  }
+
+  /** 表单 → 简化配置；公钥从本机扫描结果里补齐。 */
+  async function createTableNow() {
+    const err = $('ntErr2');
+    err.textContent = '';
+    try {
+      if (!localOwners.size) await scanMachine();
+      const id = $('ntId').value.trim() || 'main';
+      const topic = $('ntTopic').value.trim() || '（未填主题）';
+      const mode = document.querySelector('input[name=ntMode]:checked').value;
+      const rows = [...$('ntSeats').querySelectorAll('.seatrow')]
+        .map(r => [...r.querySelectorAll('input')].map(i => i.value.trim()))
+        .filter(r => r[1] && r[0]);
+      if (!rows.length) throw new Error('至少要一个席位');
+
+      const humans = [...new Set(rows.map(r => r[0]))];
+      const missing = humans.filter(h => !localOwners.has(h));
+      if (missing.length) {
+        throw new Error(`本机没有这些人类 ID 的密钥：${missing.join('、')}。远程参与者先复制上面的命令，收到公钥后由你执行。`);
+      }
+
+      const body = {
+        id, topic, mode,
+        seats: rows.map(([owner, seat]) => ({ seat, owner })),
+        owners: humans.map(h => ({ owner: h, publicKey: localOwners.get(h) })),
+      };
+      const res = await fetch('/local/tables', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((out.error && out.error.message) || ('HTTP ' + res.status));
+      err.className = '';
+      err.textContent = `已建好桌子 ${out.table}。admin token 已生成，入座仍需各自用私钥跑 join：`;
+      $('ntOut').textContent = [
+        `# ${out.table} 已创建（幂等：同名表不会重复建）`,
+        `convene serve --host 127.0.0.1 --port 7341 --data ./data`,
+        ...rows.map(([owner, seat]) => `convene join ${out.table} --url http://127.0.0.1:7341 --owner ${owner}.owner.json --seat ${seat} --out ${seat}.seat.json`),
+        '',
+        '# admin token（只在本机用；GET /ledger 与 POST /close 需要它，别外发）',
+        out.admin_token,
+      ].join('\n');
+      $('ntOut').hidden = false;
+      $('ntCopyRow').hidden = false;
+    } catch (e2) {
+      err.className = 'err';
+      err.textContent = e2.message || String(e2);
+    }
+  }
+
+  $('btnScan').addEventListener('click', scanMachine);
+  $('ntCreate').addEventListener('click', createTableNow);
 
   // ---- theme --------------------------------------------------------------
   const THEME_KEY = 'convene.theme';
