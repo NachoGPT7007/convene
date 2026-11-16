@@ -197,7 +197,6 @@ packages/seat-daemon/      @convene/seat-daemon: webhook spool + local MCP (P2, 
 apps/rabbit-hole/          Rabbit Hole Mini App
 demo/                      session runners; recorded sessions in demo/out/
 docs/assets/               figures (.excalidraw sources + PNG), Rabbit Hole screenshots
-docs/deploy-proxy.md       putting a reverse proxy (and TLS) in front of a table host
 test/                      vitest suites
 ```
 
