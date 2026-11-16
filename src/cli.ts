@@ -13,6 +13,7 @@ import { collectDms, formatInbox } from './inbox.js';
 import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv, checkGithub, probeGithub, checkEndpoint, probeEndpoint } from './doctor.js';
 import { serviceUnit, installService, uninstallService, serviceStatus, unitPath, unitName, defaultServeExec, repoRootFromModule, type ServiceOptions } from './service.js';
 import { buildTableConfig, parseSeatSpec } from './init.js';
+import { seatDirs, findSeatFile, listSeatFiles } from './seatfile.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -29,7 +30,31 @@ for (let i = 0; i < rest.length; i++) {
 }
 const url = flags.url ?? process.env.BYOB_URL ?? 'http://127.0.0.1:7341';
 const loadOwner = (f: string) => { const k = JSON.parse(readFileSync(f, 'utf8')); return new Owner(k.id, { publicKey: k.publicKey, privateKey: k.privateKey }); };
-const seatFrom = (f: string) => { const s = JSON.parse(readFileSync(f, 'utf8')); return new SeatClient(s.url, s.table, s.seat, s.token); };
+/** Accept `alice`, `alice.seat.json` or any relative path; search the data dirs when needed. */
+function seatFileOrExplain(input: string): string {
+  const dirs = seatDirs(flags.data ?? process.env.CONVENE_DATA);
+  const hit = findSeatFile(input, dirs);
+  if (hit) return hit.path;
+  const available = listSeatFiles(dirs);
+  const tried = seatCandidatesHint(input, dirs);
+  throw new Error([
+    `找不到席位文件：${input}`,
+    '找过：',
+    ...tried.map(t => `  ${t}`),
+    available.length ? `可用的席位：\n${available.map(a => `  ${a}`).join('\n')}` : '（这些目录里还没有任何 *.seat.json）',
+  ].join('\n'));
+}
+
+function seatCandidatesHint(input: string, dirs: string[]): string[] {
+  const base = input.endsWith('.json') ? input : `${input}.seat.json`;
+  const name = base.split('/').pop() as string;
+  return [...new Set([input, base, ...dirs.flatMap(d => [`${d}/${name}`])])];
+}
+
+const seatFrom = (f: string) => {
+  const s = JSON.parse(readFileSync(seatFileOrExplain(f), 'utf8'));
+  return new SeatClient(s.url, s.table, s.seat, s.token);
+};
 
 /** Everything `convene service` needs, resolved from flags so the unit matches what you asked for. */
 function serviceOptions(name: string): ServiceOptions {
@@ -47,8 +72,8 @@ function serviceOptions(name: string): ServiceOptions {
 
 /** `dm inbox` keeps its read cursor next to the seat file: the server cursor is shared with `read`. */
 async function dmInbox(flags: Record<string, string>) {
-  const seatPath = flags.seat;
-  if (!seatPath) throw new Error('dm inbox requires --seat seat.json');
+  if (!flags.seat) throw new Error('dm inbox requires --seat <name or seat file>');
+  const seatPath = seatFileOrExplain(flags.seat);
   const c = seatFrom(seatPath);
   const p = await c.projection(0);
   const dms = collectDms(p.tail, c.seat);
@@ -199,8 +224,8 @@ async function run() {
       return console.log(`removed @${j.removed ?? seat} from ${table}`);
     }
     case 'ui': {
-      if (!flags.seat) throw new Error('ui requires --seat seat.json: the link carries that seat\'s token');
-      const s = JSON.parse(readFileSync(flags.seat, 'utf8')) as { url?: string; table: string; seat: string; token: string };
+      if (!flags.seat) throw new Error('ui requires --seat <name or seat file>: the link carries that seat\'s token');
+      const s = JSON.parse(readFileSync(seatFileOrExplain(flags.seat), 'utf8')) as { url?: string; table: string; seat: string; token: string };
       const base = (flags.url ?? s.url ?? url).replace(/\/+$/, '');
       const fragment = new URLSearchParams({ t: s.token, table: s.table, seat: s.seat }).toString();
       const link = `${base}/#${fragment}`;

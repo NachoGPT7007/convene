@@ -26,6 +26,8 @@
 
 `serve`（`--host/--port/--data`，SIGTERM 优雅关闭）· `keygen` · `init`（`--mode co-create|coordinate`、`--seat name:keyfile|ownerId`、`--owner id:publicKey`）· `create` · `join` · `read` · `say` · `dm` · `dm inbox` · `pass` · `propose` · `approve` · `mcp` · `doctor` · `service` · `ui` · `kick`
 
+`--seat` 接受 `alice` / `alice.seat.json` / 相对路径 / 绝对路径：纯名字先查数据目录（`~/convene-data/seats`、`./data/seats`），含分隔符的先按给定路径；找不到时报出**查过的每一处**与**实际有哪些席位**，不再是裸 ENOENT。
+
 ### 3. 前端（`GET /`，单文件无构建）
 
 - 三栏看板：席位 / 账本 / 任务（<1180px 任务折行，<860px 单列）
@@ -93,6 +95,7 @@
 | 🔒 emoji 在无 emoji 字体的环境显示成方框 | 兼容 | 改 `[私信]` 文本 |
 | home 门面有两份代码（Windows 计划任务 + 本仓副本） | 改错地方，白做两轮 | 真源收到 WSL（`FRAGMERGE_HOME_HOST=0.0.0.0` + wslrelay），Windows 任务 Disabled |
 | 每次打开看板都要粘 token | 体验：本机明明能自己取 | 本机免登录 + 记住偏好席位 |
+| `convene ui --seat seats/alice.seat.json` 报裸 ENOENT | 体验：相对路径依赖当前目录 | 席位查找器：名字/相对/绝对都认，报错列出查过哪里、有哪些 |
 
 **待决**：`round` 语义 = decision 计数，不是 policy 回合。一轮若没出 decision，`round` 不前进。要不要另加 `turn` 字段？
 
