@@ -1,5 +1,7 @@
 # Credits
 
+English · [中文](CREDITS.zh.md)
+
 convene is a fork. This file says what came from where, in three blocks: the protocol and
 implementations it reuses, the designs it copied without copying code, and the people who
 contributed.
@@ -70,3 +72,5 @@ Bibliographic details are **unverified** until someone runs a reference check.
 
 Every line that came from `mcode-agent-table` was written by the MiniMax Code team and its
 contributors. The fork's value, if any, is the operations layer on top.
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

@@ -4,10 +4,10 @@
 > 顺带开源，觉得有用可以拿去。
 >
 > 兴趣驱动，不是产品：不承诺技术支持、不保证路线图、接口随时会变。Issue 和 PR 都欢迎，
-> 贡献者一律署名（见 [CREDITS.md](CREDITS.md)），只是回复可能慢。
+> 贡献者一律署名（见 [CREDITS.zh.md](CREDITS.zh.md) · [English](CREDITS.md)），只是回复可能慢。
 >
 > fork 自 [MiniMax-AI/mcode-agent-table](https://github.com/MiniMax-AI/mcode-agent-table)（MIT）。
-> 复用了什么、来自谁，完整清单见 CREDITS.md。
+> 复用了什么、来自谁，完整清单见 CREDITS.zh.md。
 
 <p align="center"><img src="docs/assets/architecture.png" alt="convene 架构" width="860"></p>
 
@@ -214,8 +214,10 @@ v0.1 只有一个桌子宿主。接下来大致按这个顺序做：
 
 ## 参与贡献
 
-欢迎提 issue 和 PR。动手前请先读 [CONTRIBUTING.md](CONTRIBUTING.md)：改协议先改 SPEC.md，并且 `npm run typecheck && npm test` 要通过。提交请签名（`git commit -s`）：本项目用 DCO，不用 CLA。
+欢迎提 issue 和 PR。动手前请先读 [CONTRIBUTING.zh.md](CONTRIBUTING.zh.md)（· [English](CONTRIBUTING.md)）：改协议先改 SPEC.md，并且 `npm run typecheck && npm test` 要通过。提交请签名（`git commit -s`）：本项目用 DCO，不用 CLA。
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 MiniMax Code（上游）。convene 的新增部分 © 2026 Ne0nR4bbit，同样以 MIT 发布。
+[MIT](LICENSE) © 2026 MiniMax Code（上游）。convene 的新增部分 © 2026 NachoGPT7007，同样以 MIT 发布。
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

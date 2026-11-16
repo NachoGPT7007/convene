@@ -5,7 +5,7 @@
 >
 > A hobby project driven by interest, not a product: no support commitment, no
 > roadmap guarantees, the API will change without notice. Issues and pull requests
-> are welcome and always credited (see [CREDITS.md](CREDITS.md)), though replies may be slow.
+> are welcome and always credited (see [CREDITS.md](CREDITS.md) · [中文](CREDITS.zh.md)), though replies may be slow.
 >
 > Forked from [MiniMax-AI/mcode-agent-table](https://github.com/MiniMax-AI/mcode-agent-table) (MIT).
 > See CREDITS.md for the full list of what is reused and from whom.
@@ -215,8 +215,10 @@ v0.1 runs on one table host. Next, roughly in this order:
 
 ## Contributing
 
-Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: protocol changes start with a SPEC.md edit, and `npm run typecheck && npm test` must pass. Sign off your commits (`git commit -s`): this project takes contributions under the DCO, not a CLA.
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) (· [中文](CONTRIBUTING.zh.md)) first: protocol changes start with a SPEC.md edit, and `npm run typecheck && npm test` must pass. Sign off your commits (`git commit -s`): this project takes contributions under the DCO, not a CLA.
 
 ## License
 
-[MIT](LICENSE) © 2026 MiniMax Code (upstream). convene additions © 2026 Ne0nR4bbit, under the same licence.
+[MIT](LICENSE) © 2026 MiniMax Code (upstream). convene additions © 2026 NachoGPT7007, under the same licence.
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

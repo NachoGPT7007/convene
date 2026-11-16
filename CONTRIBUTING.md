@@ -1,5 +1,7 @@
 # Contributing
 
+English · [中文](CONTRIBUTING.zh.md)
+
 Thanks for helping set the table.
 
 ## Ground rules
@@ -37,3 +39,5 @@ git commit -s
 That adds a `Signed-off-by:` line: you certify you wrote the change or have the right to
 submit it. By contributing you agree your contributions are licensed under the
 [MIT License](LICENSE).
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
