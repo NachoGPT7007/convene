@@ -7,6 +7,7 @@ import { JsonlStore } from './store.js';
 import { createTableServer } from './server.js';
 import { generateOwnerKeys } from './crypto.js';
 import { Owner, SeatClient, createTable, renderPrefix, renderTail } from './client.js';
+import { collectDms, formatInbox } from './inbox.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
@@ -19,6 +20,21 @@ const url = flags.url ?? process.env.BYOB_URL ?? 'http://127.0.0.1:7341';
 const loadOwner = (f: string) => { const k = JSON.parse(readFileSync(f, 'utf8')); return new Owner(k.id, { publicKey: k.publicKey, privateKey: k.privateKey }); };
 const seatFrom = (f: string) => { const s = JSON.parse(readFileSync(f, 'utf8')); return new SeatClient(s.url, s.table, s.seat, s.token); };
 
+/** `dm inbox` keeps its read cursor next to the seat file: the server cursor is shared with `read`. */
+async function dmInbox(flags: Record<string, string>) {
+  const seatPath = flags.seat;
+  if (!seatPath) throw new Error('dm inbox requires --seat seat.json');
+  const c = seatFrom(seatPath);
+  const p = await c.projection(0);
+  const dms = collectDms(p.tail, c.seat);
+  const stateFile = `${seatPath}.inbox.json`;
+  let lastSeen = 0;
+  try { lastSeen = Number(JSON.parse(readFileSync(stateFile, 'utf8')).last_seen_seq) || 0; } catch { /* first run */ }
+  const r = formatInbox({ me: c.seat, table: c.table, dms, lastSeen });
+  console.log(r.text);
+  if (!flags['keep-unread'] && r.maxSeq > lastSeen) writeFileSync(stateFile, JSON.stringify({ last_seen_seq: r.maxSeq }, null, 2) + '\n', { mode: 0o600 });
+}
+
 const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream reference CLI)
 
   convene serve [--port 7341] [--data ./data]
@@ -28,6 +44,7 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene read --seat seat.json [--since N]          projection (prefix + tail)
   convene say --seat seat.json <text> [--to @x]
   convene dm --seat seat.json --to @x <text>         direct message: ledger entry, private to the recipient
+  convene dm inbox --seat seat.json [--keep-unread]  read your direct messages, grouped by seat
   convene pass --seat seat.json [text]
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
@@ -60,10 +77,11 @@ async function run() {
     }
     case 'read': {
       const p = await seatFrom(flags.seat).projection(flags.since ? Number(flags.since) : 0);
-      return console.log(`${renderPrefix(p)}\n\nfloor: ${p.floor.holder}${p.floor.you_have_floor ? ' (you)' : ''}  status: ${p.status}\n\n${renderTail(p)}`);
+      return console.log(`${renderPrefix(p)}\n\nfloor: ${p.floor.holder}${p.floor.you_have_floor ? ' (you)' : ''}  round: ${p.floor.round + 1}  status: ${p.status}\n\n${renderTail(p)}`);
     }
     case 'say': return console.log(JSON.stringify(await seatFrom(flags.seat).say(pos.join(' '), { to: flags.to?.split(',') })));
     case 'dm': {
+      if (pos[0] === 'inbox') return dmInbox(flags);
       if (!flags.to) throw new Error('dm requires --to @seat[,@seat]');
       return console.log(JSON.stringify(await seatFrom(flags.seat).post({ kind: 'dm', to: flags.to.split(','), body: pos.join(' ') })));
     }
