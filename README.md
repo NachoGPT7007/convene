@@ -1,6 +1,16 @@
-# mcode-agent-table
+# convene
 
-<p align="center"><img src="docs/assets/architecture.png" alt="mcode-agent-table architecture" width="860"></p>
+> Personal tooling for multi-agent collaboration on a shared table. Built for my own
+> two-machine setup (WSL + Fedora) and a few friends — shared in case it's useful.
+>
+> A hobby project driven by interest, not a product: no support commitment, no
+> roadmap guarantees, the API will change without notice. Issues and pull requests
+> are welcome and always credited (see [CREDITS.md](CREDITS.md)), though replies may be slow.
+>
+> Forked from [MiniMax-AI/mcode-agent-table](https://github.com/MiniMax-AI/mcode-agent-table) (MIT).
+> See CREDITS.md for the full list of what is reused and from whom.
+
+<p align="center"><img src="docs/assets/architecture.png" alt="convene architecture" width="860"></p>
 
 **Everyone brings their own bot. We set the table.**
 
@@ -10,7 +20,9 @@
 
 English · [中文](README.zh.md)
 
-mcode-agent-table is the BYOB (Bring Your Own Bot) Table Protocol v0.1 and its reference implementation in TypeScript, built by the MiniMax Code team.
+convene is the operations and deployment layer for BYOB (Bring Your Own Bot) tables: the protocol v0.1 and its TypeScript implementation come from [MiniMax-AI/mcode-agent-table](https://github.com/MiniMax-AI/mcode-agent-table) by the MiniMax Code team, and convene adds what a table needs once more than one machine and more than one person sit at it — direct messages, a round counter, a seat daemon and the access rules between two machines.
+
+**The wire protocol stays `byob/0.1`.** Every convene extension is an optional field that Table Core fills in: a client that never sends them keeps working, and the JSON Schemas in [`schemas/`](schemas/) still validate upstream traffic. That is what keeps rebasing onto upstream possible — see [Extensions](#extensions-convene).
 
 ## Why
 
@@ -26,11 +38,13 @@ Most multi-agent systems put every agent inside one platform: one model, one con
 - **Cache-friendly projections.** Each seat reads a stable, hashed prefix plus an append-only tail, with no timestamps.
 - **Propose → approve → execute → verify.** Cross-owner actions wait for the affected owner's signature, run in that owner's own bot, and count as done only after a different seat verifies. A watchdog marks silent tasks `stalled`.
 - **Disclosure on the owner's side.** Deny rules run in the seat SDK, so a blocked post never reaches the table.
-- **Many ways to sit down.** MCode adapter, an MCP server with 12 tools, a client library, and the `byob` CLI.
+- **Direct messages.** A `dm` is a ledger entry like any other, filtered server-side: the sender, the named recipients and seats whose owner signed `read_dm_all` can read it; everyone else gets `404`, not `403`. No floor required, point to point only.
+- **Rounds.** Table Core stamps every entry with the number of decisions landed so far, so "round 3 of 5" is a field in the projection, not a guess.
+- **Many ways to sit down.** MCode adapter, an MCP server with 13 tools, a client library, and the `convene` CLI (`byob` stays as an alias).
 
 ## Architecture
 
-The figure above is the whole system. The table host (`byob serve`) holds Table Core and speaks HTTP + SSE under `/v0.1`. Bots stay on their owners' machines and connect through an adapter. Owner keys never leave those machines.
+The figure above is the whole system. The table host (`convene serve`) holds Table Core and speaks HTTP + SSE under `/v0.1`. Bots stay on their owners' machines and connect through an adapter. Owner keys never leave those machines.
 
 <p align="center"><img src="docs/assets/ledger-projection.png" alt="One ledger, one projection per seat" width="820"></p>
 
@@ -49,7 +63,7 @@ The joining handshake is drawn in [`docs/assets/join-sequence.png`](docs/assets/
 Requires Node ≥ 22.19.
 
 ```bash
-git clone https://github.com/MiniMax-AI/mcode-agent-table && cd mcode-agent-table
+git clone https://github.com/NachoGPT7007/convene && cd convene
 npm install
 npm test                 # vitest: core, topologies, tasks, HTTP/SSE, persistence, MCP bridge, Rabbit Hole
 npm run demo:scripted    # offline run: debate -> decision -> owner approval -> execute -> verify
@@ -92,17 +106,19 @@ Three MCode agents with three different owners sit at one debate table: `bot-tao
 
 **MiniMax Code.** [`src/adapters/mcode.ts`](src/adapters/mcode.ts) drives a real MCode agent through `@minimax-ai/code-sdk`. It keeps one session per seat, sends prefix + tail on the first turn, and only the new tail after that.
 
-**Any MCP agent (Claude Code, Codex, Cursor, …).** `byob mcp` is a stdio MCP server that runs on the owner's machine:
+**Any MCP agent (Claude Code, Codex, Cursor, …).** `convene mcp` is a stdio MCP server that runs on the owner's machine:
 
 ```json
-{ "mcpServers": { "byob": {
-    "command": "npx", "args": ["tsx", "/path/to/mcode-agent-table/src/cli.ts", "mcp"],
+{ "mcpServers": { "convene": {
+    "command": "npx", "args": ["tsx", "/path/to/convene/src/cli.ts", "mcp"],
     "env": { "BYOB_URL": "http://127.0.0.1:7341", "BYOB_TABLE": "my-table",
              "BYOB_OWNER_KEY_FILE": "/path/to/tao.owner.json",
              "BYOB_CARD_FILE": "/path/to/tao.card.json" } } } }
 ```
 
-The 12 tools: `byob_join`, `byob_read_projection`, `byob_say`, `byob_pass`, `byob_raise_hand`, `byob_propose`, `byob_decide`, `byob_approve`, `byob_status`, `byob_receipt`, `byob_verify`, `byob_memory`. The capability card comes from `BYOB_CARD_FILE`, never from the agent. `byob_approve` asks the owner to confirm through MCP elicitation and refuses if the client cannot ask; the owner can always run `byob approve`.
+The environment variables keep their `BYOB_` prefix: they are part of the wire contract with upstream, and renaming them would break every existing seat file.
+
+The 13 tools: `byob_join`, `byob_read_projection`, `byob_say`, `byob_dm`, `byob_pass`, `byob_raise_hand`, `byob_propose`, `byob_decide`, `byob_approve`, `byob_status`, `byob_receipt`, `byob_verify`, `byob_memory`. The capability card comes from `BYOB_CARD_FILE`, never from the agent. `byob_approve` asks the owner to confirm through MCP elicitation and refuses if the client cannot ask; the owner can always run `convene approve`.
 
 **Your own code.** The client library handles keys, signing, the seat loop and disclosure:
 
@@ -115,7 +131,7 @@ await runSeat(seat, {
 });
 ```
 
-**From a shell.** `byob say | pass | propose | approve | read` (run `npx tsx src/cli.ts` for usage).
+**From a shell.** `convene say | dm | pass | propose | approve | read` (run `npx tsx src/cli.ts` for usage).
 
 ## Rabbit Hole Mini App
 
@@ -148,6 +164,23 @@ Then ask MiniMax Code to install the Mini App in `apps/rabbit-hole`. Start a mee
 
 [SPEC.md](SPEC.md) is the normative text of `byob/0.1`, and [`schemas/`](schemas/) holds the JSON Schemas that Table Core validates against at runtime. It covers the model, HTTP + SSE endpoints, table config, the join handshake, ledger entries, projections, topologies, floor control and termination, the task gateway, the MCP bridge and every error code.
 
+## Extensions (convene)
+
+Five optional fields, added to the upstream schemas without removing or renaming anything. Table Core fills the default when a client omits them, so a client written against `byob/0.1` never sees a difference.
+
+| Field | Default | What it adds | Status |
+|---|---|---|---|
+| `capability-card.grants` | four fields, all `false` | `speak_anytime`, `reset_depth`, `read_dm_all`, `veto` — signed by the owner, never derived from attendance | schema + `read_dm_all` enforced |
+| `join-request.attendance` | `standby` | `live` \| `standby` \| `autonomous`: can an operator still take over this seat? | schema only |
+| `capability-card.badge` | `null` | inline SVG plus a fallback colour, signed by the owner so a badge cannot be impersonated | schema only |
+| `ledger-entry.kind: "dm"` | — | direct message: on the ledger, filtered server-side, `404` to everyone else | **done** |
+| `ledger-entry.round` | `0` | decisions landed so far, stamped by Table Core; the projection's floor carries the current round | **done** |
+
+Two rules carried over from the design:
+
+- **A grant is never derived.** `read_dm_all` has to sit in the owner-signed card. Being human, or being `live`, does not imply it.
+- **The protocol is frozen.** Nothing in [SPEC.md](SPEC.md) or `schemas/` is removed or renamed, so `git rebase upstream/main` keeps working. The extensions belong upstream once they have been used for a while; until then they live here.
+
 ## Project layout
 
 ```
@@ -158,8 +191,8 @@ src/server.ts              HTTP + SSE transport
 src/client.ts              seat SDK: owner keys, SeatClient, runSeat(), disclosure guard
 src/adapters/mcode.ts      MCode seat via @minimax-ai/code-sdk
 src/adapters/scripted.ts   scripted, echo and deterministic-checker seats
-src/mcp.ts                 MCP bridge (byob mcp, 12 tools)
-src/cli.ts                 byob CLI
+src/mcp.ts                 MCP bridge (convene mcp, 13 tools)
+src/cli.ts                 convene CLI (`byob` alias kept)
 apps/rabbit-hole/          Rabbit Hole Mini App
 demo/                      session runners; recorded sessions in demo/out/
 docs/assets/               figures (.excalidraw sources + PNG), Rabbit Hole screenshots
@@ -170,6 +203,9 @@ test/                      vitest suites
 
 v0.1 runs on one table host. Next, roughly in this order:
 
+- **Seat daemon** (convene): a package that receives webhook wake-ups, spools them locally and exposes a local MCP tool, so a seat does not have to poll to learn it holds the floor.
+- **One source of truth for access** (convene): fold the three places that today describe who may read and write between two machines — `authorized_keys` `command=`, the read-only gateway's whitelist, and the protocol doc — into one `access.yaml` both gateways are generated from.
+- **Two deployment entries** (convene): Cloudflare Access (owner email OTP, agent Service Token) for the public side, and the tailnet for the private side.
 - **Federation** between table hosts, so seats on other machines and orgs can join.
 - **Signatures on every post**, not only on joins and approvals (posts are authenticated by seat token today).
 - **Multi-owner proposals**: one proposal touching several owners, with each owner's approval.
@@ -179,8 +215,8 @@ v0.1 runs on one table host. Next, roughly in this order:
 
 ## Contributing
 
-Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: protocol changes start with a SPEC.md edit, and `npm run typecheck && npm test` must pass.
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: protocol changes start with a SPEC.md edit, and `npm run typecheck && npm test` must pass. Sign off your commits (`git commit -s`): this project takes contributions under the DCO, not a CLA.
 
 ## License
 
-[MIT](LICENSE) © 2026 MiniMax Code
+[MIT](LICENSE) © 2026 MiniMax Code (upstream). convene additions © 2026 Ne0nR4bbit, under the same licence.

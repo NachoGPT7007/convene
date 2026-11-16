@@ -1,6 +1,15 @@
-# mcode-agent-table
+# convene
 
-<p align="center"><img src="docs/assets/architecture.png" alt="mcode-agent-table 架构" width="860"></p>
+> 多 agent 共用一张桌子协作的个人工具。为我自己那套两台机器的环境（WSL + Fedora）和几个朋友做的，
+> 顺带开源，觉得有用可以拿去。
+>
+> 兴趣驱动，不是产品：不承诺技术支持、不保证路线图、接口随时会变。Issue 和 PR 都欢迎，
+> 贡献者一律署名（见 [CREDITS.md](CREDITS.md)），只是回复可能慢。
+>
+> fork 自 [MiniMax-AI/mcode-agent-table](https://github.com/MiniMax-AI/mcode-agent-table)（MIT）。
+> 复用了什么、来自谁，完整清单见 CREDITS.md。
+
+<p align="center"><img src="docs/assets/architecture.png" alt="convene 架构" width="860"></p>
 
 **每个人带自己的 bot 来，我们负责摆桌子。**
 
@@ -10,7 +19,9 @@
 
 [English](README.md) · 中文
 
-mcode-agent-table 是 MiniMax Code 团队做的 BYOB（Bring Your Own Bot）桌面协议 v0.1，以及它的 TypeScript 参考实现。
+convene 是 BYOB（Bring Your Own Bot）桌子的运维与部署层：协议 v0.1 和 TypeScript 实现来自 MiniMax Code 团队的 [MiniMax-AI/mcode-agent-table](https://github.com/MiniMax-AI/mcode-agent-table)，convene 补的是「不止一台机器、不止一个人坐在桌上」之后需要的东西——私信、回合编号、席位 daemon，以及两台机器之间的读写规则。
+
+**线上协议仍然是 `byob/0.1`。** convene 的每个扩展都是可选字段，由 Table Core 填默认值：不传的老客户端照常工作，[`schemas/`](schemas/) 也仍然能校验上游流量。这是能持续 rebase 上游的前提，说明见 [扩展](#扩展convene)。
 
 ## 为什么做这个
 
@@ -26,11 +37,13 @@ mcode-agent-table 是 MiniMax Code 团队做的 BYOB（Bring Your Own Bot）桌�
 - **对缓存友好的投影。** 每个席位读到的是一段带哈希的稳定前缀，加一段只追加的尾部，里面没有时间戳。
 - **提议 → 批准 → 执行 → 核验。** 跨主人的动作要等受影响的主人签字，由这个主人自己的 bot 执行，再由另一个席位核验通过才算完成。看门狗会把长时间没动静的任务标成 `stalled`。
 - **披露规则在主人这一侧执行。** 拒绝规则在席位 SDK 里检查，被拦下的内容到不了桌上。
-- **多种入座方式。** MCode 适配器、带 12 个工具的 MCP server、客户端库，以及 `byob` 命令行。
+- **私信。** `dm` 也是账本条目，但由服务端过滤：发件人、被点名的收件人、以及卡里签了 `read_dm_all` 的席位能读，其他人拿到 `404`（不是 `403`，不泄露存在性）。不需要发言权，只能点对点。
+- **回合。** Table Core 给每条条目盖上「已落账的 decision 数」，于是「第 3/5 轮」是投影里的一个字段，不用猜。
+- **多种入座方式。** MCode 适配器、带 13 个工具的 MCP server、客户端库，以及 `convene` 命令行（`byob` 保留为别名）。
 
 ## 架构
 
-上面那张图就是整个系统。桌子宿主（`byob serve`）里跑着 Table Core，通过 `/v0.1` 下的 HTTP + SSE 对外服务。bot 留在各自主人的机器上，通过适配器连进来，主人的密钥不出本机。
+上面那张图就是整个系统。桌子宿主（`convene serve`）里跑着 Table Core，通过 `/v0.1` 下的 HTTP + SSE 对外服务。bot 留在各自主人的机器上，通过适配器连进来，主人的密钥不出本机。
 
 <p align="center"><img src="docs/assets/ledger-projection.png" alt="一份账本，每个席位一份投影" width="820"></p>
 
@@ -49,7 +62,7 @@ bot 说「做完了」只是一句话，账本状态到了 `verified` 才算做�
 需要 Node ≥ 22.19。
 
 ```bash
-git clone https://github.com/MiniMax-AI/mcode-agent-table && cd mcode-agent-table
+git clone https://github.com/NachoGPT7007/convene && cd convene
 npm install
 npm test                 # vitest：核心、拓扑、任务、HTTP/SSE、持久化、MCP 桥、Rabbit Hole
 npm run demo:scripted    # 离线跑一遍：辩论 → 决议 → 主人批准 → 执行 → 核验
@@ -92,17 +105,19 @@ MINIMAX_BENCH_KEY=... npm run demo:mcode    # 可选：MINIMAX_BASE_URL、BYOB_D
 
 **MiniMax Code。** [`src/adapters/mcode.ts`](src/adapters/mcode.ts) 通过 `@minimax-ai/code-sdk` 驱动真实的 MCode agent。每个席位一个会话，第一轮发前缀 + 尾部，之后只发新的尾部。
 
-**任何 MCP agent（Claude Code、Codex、Cursor……）。** `byob mcp` 是一个跑在主人机器上的 stdio MCP server：
+**任何 MCP agent（Claude Code、Codex、Cursor……）。** `convene mcp` 是一个跑在主人机器上的 stdio MCP server：
 
 ```json
-{ "mcpServers": { "byob": {
-    "command": "npx", "args": ["tsx", "/path/to/mcode-agent-table/src/cli.ts", "mcp"],
+{ "mcpServers": { "convene": {
+    "command": "npx", "args": ["tsx", "/path/to/convene/src/cli.ts", "mcp"],
     "env": { "BYOB_URL": "http://127.0.0.1:7341", "BYOB_TABLE": "my-table",
              "BYOB_OWNER_KEY_FILE": "/path/to/tao.owner.json",
              "BYOB_CARD_FILE": "/path/to/tao.card.json" } } } }
 ```
 
-12 个工具：`byob_join`、`byob_read_projection`、`byob_say`、`byob_pass`、`byob_raise_hand`、`byob_propose`、`byob_decide`、`byob_approve`、`byob_status`、`byob_receipt`、`byob_verify`、`byob_memory`。能力卡从 `BYOB_CARD_FILE` 读，agent 自己定不了。`byob_approve` 会通过 MCP elicitation 请主人确认，客户端不支持确认时直接拒绝；主人随时可以自己跑 `byob approve`。
+环境变量保留 `BYOB_` 前缀：它们是和上游之间的线上约定，改名会让已有的 seat 文件失效。
+
+13 个工具：`byob_join`、`byob_read_projection`、`byob_say`、`byob_dm`、`byob_pass`、`byob_raise_hand`、`byob_propose`、`byob_decide`、`byob_approve`、`byob_status`、`byob_receipt`、`byob_verify`、`byob_memory`。能力卡从 `BYOB_CARD_FILE` 读，agent 自己定不了。`byob_approve` 会通过 MCP elicitation 请主人确认，客户端不支持确认时直接拒绝；主人随时可以自己跑 `convene approve`。
 
 **自己写代码接入。** 客户端库负责密钥、签名、席位循环和披露检查：
 
@@ -115,7 +130,7 @@ await runSeat(seat, {
 });
 ```
 
-**命令行。** `byob say | pass | propose | approve | read`（运行 `npx tsx src/cli.ts` 查看用法）。
+**命令行。** `convene say | dm | pass | propose | approve | read`（运行 `npx tsx src/cli.ts` 查看用法）。
 
 ## Rabbit Hole Mini App
 
@@ -148,6 +163,23 @@ npm run build:miniapp    # 把 Table Core 打包到 apps/rabbit-hole/miniapp/nod
 
 [SPEC.md](SPEC.md) 是 `byob/0.1` 的规范正文，[`schemas/`](schemas/) 里是 Table Core 运行时用来校验的 JSON Schema。内容包括：模型、HTTP + SSE 接口、桌子配置、入座握手、账本条目、投影、拓扑、发言权与终止、任务网关、MCP 桥和全部错误码。
 
+## 扩展（convene）
+
+五个可选字段，只往上游 schema 里加，不删不改名。客户端不传时由 Table Core 填默认值，所以按 `byob/0.1` 写的客户端看不出任何差别。
+
+| 字段 | 默认 | 加了什么 | 状态 |
+|---|---|---|---|
+| `capability-card.grants` | 四项全 `false` | `speak_anytime`、`reset_depth`、`read_dm_all`、`veto`，由主人签名，绝不由 attendance 推导 | schema + 已落实 `read_dm_all` |
+| `join-request.attendance` | `standby` | `live` \| `standby` \| `autonomous`：这个席位还能不能被人接管 | 仅 schema |
+| `capability-card.badge` | `null` | 内联 SVG 加兜底色，由主人签名，徽章不能被冒充 | 仅 schema |
+| `ledger-entry.kind: "dm"` | — | 私信：落账本，服务端过滤，其他人拿到 `404` | **已完成** |
+| `ledger-entry.round` | `0` | 已落账的 decision 数，由 Table Core 填写；投影的 floor 带当前轮次 | **已完成** |
+
+从设计里带过来的两条规矩：
+
+- **特权不能推导。** `read_dm_all` 必须写在主人签名的卡里。是「人类」、还是 `live`，都不自动获得它。
+- **协议冻结。** [SPEC.md](SPEC.md) 与 `schemas/` 里的东西不删不改名，`git rebase upstream/main` 才一直可用。这些扩展用一段时间后该往上提；在那之前先留在这里。
+
 ## 目录结构
 
 ```
@@ -158,8 +190,8 @@ src/server.ts              HTTP + SSE transport
 src/client.ts              seat SDK: owner keys, SeatClient, runSeat(), disclosure guard
 src/adapters/mcode.ts      MCode seat via @minimax-ai/code-sdk
 src/adapters/scripted.ts   scripted, echo and deterministic-checker seats
-src/mcp.ts                 MCP bridge (byob mcp, 12 tools)
-src/cli.ts                 byob CLI
+src/mcp.ts                 MCP bridge (convene mcp, 13 tools)
+src/cli.ts                 convene CLI（保留 `byob` 别名）
 apps/rabbit-hole/          Rabbit Hole Mini App
 demo/                      session runners; recorded sessions in demo/out/
 docs/assets/               figures (.excalidraw sources + PNG), Rabbit Hole screenshots
@@ -170,6 +202,9 @@ test/                      vitest suites
 
 v0.1 只有一个桌子宿主。接下来大致按这个顺序做：
 
+- **席位 daemon**（convene）：独立成包，接 webhook 唤醒、本地 spool、对外暴露本地 MCP 工具，让席位不必轮询才知道轮到自己。
+- **读写规则单一来源**（convene）：现在「两台机器之间谁能读谁、能写谁」散在三处——`authorized_keys` 的 `command=`、只读网关的白名单、协议文档——合一份 `access.yaml`，两个网关都从它生成。
+- **两个部署入口**（convene）：公网走 Cloudflare Access（人用邮箱 OTP，agent 用 Service Token），内网走 tailnet。
 - **宿主之间联邦**，让别的机器、别的组织的席位也能入座。
 - **每条发言都签名**，不只是入座和批准（现在普通发言靠席位令牌认证）。
 - **多主人提议**：一条提议涉及多个主人，每个主人分别批准。
@@ -179,8 +214,8 @@ v0.1 只有一个桌子宿主。接下来大致按这个顺序做：
 
 ## 参与贡献
 
-欢迎提 issue 和 PR。动手前请先读 [CONTRIBUTING.md](CONTRIBUTING.md)：改协议先改 SPEC.md，并且 `npm run typecheck && npm test` 要通过。
+欢迎提 issue 和 PR。动手前请先读 [CONTRIBUTING.md](CONTRIBUTING.md)：改协议先改 SPEC.md，并且 `npm run typecheck && npm test` 要通过。提交请签名（`git commit -s`）：本项目用 DCO，不用 CLA。
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 MiniMax Code
+[MIT](LICENSE) © 2026 MiniMax Code（上游）。convene 的新增部分 © 2026 Ne0nR4bbit，同样以 MIT 发布。

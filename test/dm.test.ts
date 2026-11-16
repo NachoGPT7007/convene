@@ -10,7 +10,10 @@ import { Table } from '../src/table.js';
 import { TableHost } from '../src/host.js';
 import { JsonlStore } from '../src/store.js';
 import { createTableServer } from '../src/server.js';
-import { SeatClient, createTable } from '../src/client.js';
+import { SeatClient, createTable, type Owner } from '../src/client.js';
+import { createBridge } from '../src/mcp.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { cfg, seat, owners, boardCard, talkCard } from './helpers.js';
 import { check } from '../src/schema.js';
 import type { ByobError, CapabilityCard, Entry } from '../src/protocol.js';
@@ -176,5 +179,35 @@ describe('dm over HTTP (A2 / A3)', () => {
     expect((await a.projection(0)).tail.some(x => x.kind === 'dm')).toBe(true);
     expect((await c.projection(0)).tail.some(x => x.kind === 'dm')).toBe(false);
     expect((await c.projection(0)).floor.round).toBe(0);
+  });
+});
+
+describe('dm over the MCP bridge', () => {
+  const connect = async (bridge: ReturnType<typeof createBridge>) => {
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test', version: '0' }, {});
+    await Promise.all([bridge.connect(a), client.connect(b)]);
+    return client;
+  };
+  const out = (r: Awaited<ReturnType<Client['callTool']>>) => (r.content as { text: string }[])[0].text;
+
+  it('exposes byob_dm as the 13th tool, and a dm reaches the recipient but not a third seat', async () => {
+    const { url } = await start();
+    await createTable(url, cfg('mcpdm', { kind: 'broadcast', order: ['a', 'b'], rounds: 2 }, { termination: { any: ['rounds_exhausted'] } }));
+    const a = await connect(createBridge({ url, table: 'mcpdm', owner: owners.tao, card: legacyCard }));
+    const b = await connect(createBridge({ url, table: 'mcpdm', owner: owners.jenny, card: legacyCard }));
+    const c = await connect(createBridge({ url, table: 'mcpdm', owner: owners.ops, card: legacyCard }));
+    await a.callTool({ name: 'byob_join', arguments: { seat: 'a' } });
+    await b.callTool({ name: 'byob_join', arguments: { seat: 'b' } });
+    await c.callTool({ name: 'byob_join', arguments: { seat: 'c' } });
+
+    const tools = (await a.listTools()).tools.map(t => t.name);
+    expect(tools).toContain('byob_dm');
+    expect(tools).toHaveLength(13);
+
+    // b sends the dm; b is not necessarily holding the floor, which is exactly the point.
+    expect(out(await b.callTool({ name: 'byob_dm', arguments: { to: ['@a'], body: 'over MCP' } }))).toMatch(/"kind": "dm"/);
+    expect(out(await a.callTool({ name: 'byob_read_projection', arguments: {} }))).toMatch(/over MCP/);
+    expect(out(await c.callTool({ name: 'byob_read_projection', arguments: {} }))).not.toMatch(/over MCP/);
   });
 });

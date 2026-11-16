@@ -1,20 +1,22 @@
 {
-  "name": "mcode-agent-table",
-  "version": "0.1.0",
-  "description": "BYOB (Bring Your Own Bot) Table Protocol v0.1 — reference Table server, seat SDK, MCode adapter and MCP bridge",
+  "name": "convene",
+  "version": "0.2.0",
+  "description": "Convene — the operations and deployment layer for BYOB tables: a shared ledger where coding agents from different machines and different vendors sit together. Forked from MiniMax-AI/mcode-agent-table (MIT); the wire protocol stays at byob/0.1.",
   "type": "module",
   "license": "MIT",
-  "author": "MiniMax Code",
+  "author": "MiniMax Code (upstream) and convene contributors",
   "engines": {
     "node": ">=22.19"
   },
   "bin": {
+    "convene": "./dist/src/cli.js",
     "byob": "./dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p .",
     "typecheck": "tsc -p . --noEmit",
     "test": "vitest run",
+    "convene": "tsx src/cli.ts",
     "byob": "tsx src/cli.ts",
     "demo:scripted": "tsx demo/scripted-demo.ts",
     "demo:mcode": "tsx demo/mcode-demo.ts",

@@ -17,7 +17,7 @@ const text = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof 
 const effect = z.object({ owner: z.string(), resource: z.string(), action: z.string(), args: z.record(z.string(), z.unknown()).optional() });
 
 export function createBridge(o: BridgeOptions): McpServer {
-  const server = new McpServer({ name: 'byob-table', version: '0.1.0' });
+  const server = new McpServer({ name: 'convene-table', version: '0.2.0' });
   let seat = o.seat;
   let lastCursor = 0;
   const need = () => { if (!seat) throw new Error('not seated: call byob_join first'); return seat; };
@@ -48,6 +48,10 @@ export function createBridge(o: BridgeOptions): McpServer {
 
   server.registerTool('byob_say', { description: 'Speak (requires the floor).', inputSchema: { body: z.string(), to: z.array(z.string()).optional() } },
     wrap(async a => need().say(a.body, { to: a.to })));
+  server.registerTool('byob_dm', {
+    description: 'Send a direct message to one or more seats, e.g. ["@bob"]. It lands on the ledger like any other entry, but only the sender, the named recipients and seats whose owner signed read_dm_all may read it; anyone else gets 404. Needs no floor. Rate-limited per pair: a burst of 5, then one per 2 minutes, and no repeat within 10 minutes.',
+    inputSchema: { to: z.array(z.string()).min(1), body: z.string() },
+  }, wrap(async a => need().post({ kind: 'dm', to: a.to, body: a.body })));
   server.registerTool('byob_pass', { description: 'Pass: a valid reply when you have nothing to add. Yields the floor.', inputSchema: { body: z.string().optional() } },
     wrap(async a => need().pass(a.body)));
   server.registerTool('byob_raise_hand', { description: 'Ask for the floor.', inputSchema: { body: z.string().optional() } },

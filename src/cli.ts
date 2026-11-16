@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// byob CLI: serve a table host, generate owner keys, create tables, join, post, read, approve.
+// convene CLI: serve a table host, generate owner keys, create tables, join, post, read, approve.
+// The wire protocol is still byob/0.1; `byob` stays available as an alias so upstream docs keep working.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { TableHost } from './host.js';
 import { JsonlStore } from './store.js';
@@ -18,18 +19,21 @@ const url = flags.url ?? process.env.BYOB_URL ?? 'http://127.0.0.1:7341';
 const loadOwner = (f: string) => { const k = JSON.parse(readFileSync(f, 'utf8')); return new Owner(k.id, { publicKey: k.publicKey, privateKey: k.privateKey }); };
 const seatFrom = (f: string) => { const s = JSON.parse(readFileSync(f, 'utf8')); return new SeatClient(s.url, s.table, s.seat, s.token); };
 
-const usage = `byob — BYOB Table Protocol v0.1 reference CLI
+const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream reference CLI)
 
-  byob serve [--port 7341] [--data ./data]
-  byob keygen <owner-id> --out owner.json            Ed25519 owner key (keep private)
-  byob create <table-config.json>                    prints admin token
-  byob join <table> --owner owner.json --seat <id> [--role r] [--bot name] [--card card.json] [--human] --out seat.json
-  byob read --seat seat.json [--since N]             projection (prefix + tail)
-  byob say --seat seat.json <text> [--to @x]
-  byob pass --seat seat.json [text]
-  byob propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
-  byob approve <table> <task> --owner owner.json [--reject] [--reason text]
-  byob mcp                                           MCP stdio bridge (env BYOB_URL, BYOB_TABLE, BYOB_OWNER_KEY_FILE)
+  convene serve [--port 7341] [--data ./data]
+  convene keygen <owner-id> --out owner.json         Ed25519 owner key (keep private)
+  convene create <table-config.json>                 prints admin token
+  convene join <table> --owner owner.json --seat <id> [--role r] [--bot name] [--card card.json] [--human] --out seat.json
+  convene read --seat seat.json [--since N]          projection (prefix + tail)
+  convene say --seat seat.json <text> [--to @x]
+  convene dm --seat seat.json --to @x <text>         direct message: ledger entry, private to the recipient
+  convene pass --seat seat.json [text]
+  convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
+  convene approve <table> <task> --owner owner.json [--reject] [--reason text]
+  convene mcp                                        MCP stdio bridge (env BYOB_URL, BYOB_TABLE, BYOB_OWNER_KEY_FILE)
+
+  \`byob\` is kept as an alias for every subcommand above.
 `;
 
 async function run() {
@@ -37,7 +41,7 @@ async function run() {
     case 'serve': {
       const host = new TableHost(new JsonlStore(flags.data ?? './data'));
       const port = Number(flags.port ?? 7341);
-      createTableServer(host).listen(port, '127.0.0.1', () => console.log(`byob table host on http://127.0.0.1:${port}/v0.1 (data: ${flags.data ?? './data'})`));
+      createTableServer(host).listen(port, '127.0.0.1', () => console.log(`convene table host on http://127.0.0.1:${port}/v0.1 (data: ${flags.data ?? './data'})`));
       return;
     }
     case 'keygen': {
@@ -59,6 +63,10 @@ async function run() {
       return console.log(`${renderPrefix(p)}\n\nfloor: ${p.floor.holder}${p.floor.you_have_floor ? ' (you)' : ''}  status: ${p.status}\n\n${renderTail(p)}`);
     }
     case 'say': return console.log(JSON.stringify(await seatFrom(flags.seat).say(pos.join(' '), { to: flags.to?.split(',') })));
+    case 'dm': {
+      if (!flags.to) throw new Error('dm requires --to @seat[,@seat]');
+      return console.log(JSON.stringify(await seatFrom(flags.seat).post({ kind: 'dm', to: flags.to.split(','), body: pos.join(' ') })));
+    }
     case 'pass': return console.log(JSON.stringify(await seatFrom(flags.seat).pass(pos.join(' ') || undefined)));
     case 'propose': return console.log(JSON.stringify(await seatFrom(flags.seat).propose(pos.join(' '), JSON.parse(flags.effects))));
     case 'approve': return console.log(JSON.stringify(await loadOwner(flags.owner).decide(url, pos[0], pos[1], flags.reject ? 'reject' : 'approve', flags.reason)));

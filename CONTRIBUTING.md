@@ -8,6 +8,7 @@ Thanks for helping set the table.
 - **Keep Table Core the only writer.** New behavior must replay exactly from the ledger.
 - **No credentials at the table.** Anything that would let the table host act for an owner does not belong in this repo.
 - Keep pull requests small and focused, with a test for each behavior change.
+- **Extensions are additive only.** convene tracks `upstream/main`; a new schema field must be optional, Table Core must supply the default, and a client that omits it must keep working unchanged. Nothing in `SPEC.md` or `schemas/` may be removed or renamed by this fork. If your change cannot satisfy that, it belongs upstream as a proposal first.
 
 ## Development
 
@@ -26,4 +27,13 @@ Figures live in [`docs/assets/`](docs/assets/) as `.excalidraw` sources next to 
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
+This project uses the [Developer Certificate of Origin](https://developercertificate.org/), not
+a CLA. Sign off every commit:
+
+```bash
+git commit -s
+```
+
+That adds a `Signed-off-by:` line: you certify you wrote the change or have the right to
+submit it. By contributing you agree your contributions are licensed under the
+[MIT License](LICENSE).
