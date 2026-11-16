@@ -96,12 +96,14 @@ describe('local operator interface', () => {
     const a = await SeatClient.join(url, 'kick', owners.tao, { seat: 'ka', card: { bot: 'x', capabilities: [] } });
     const b = await SeatClient.join(url, 'kick', owners.tao, { seat: 'kb', card: { bot: 'x', capabilities: [] } });
 
-    expect((await a.projection(0)).prefix.seats.map((x: { seat: string }) => x.seat)).toEqual(['ka', 'kb']);
+    const seatsOf = async (c: SeatClient) =>
+      ((await c.projection(0)).prefix.seats as { seat: string }[]).map(x => x.seat);
+    expect(await seatsOf(a)).toEqual(['ka', 'kb']);
 
     const rm = await fetch(url + '/local/tables/kick/seats/ka/remove', { method: 'POST' });
     expect(rm.status).toBe(200);
 
-    expect((await b.projection(0)).prefix.seats.map((x: { seat: string }) => x.seat)).toEqual(['kb']);
+    expect(await seatsOf(b)).toEqual(['kb']);
     // The credential is revoked, so this is an auth failure and not a missing-seat 404.
     const dead = await a.projection(0).then(() => null, (e: { code: string }) => e);
     expect(dead?.code).toBe('E_UNAUTHORIZED');
@@ -117,7 +119,7 @@ describe('local operator interface', () => {
     await fetch(url + '/kick2-placeholder', { method: 'GET' }).catch(() => null);
     await fetch(url + '/local/tables/kick2/seats/ka/remove', { method: 'POST' });
     const after = await b.projection(0);
-    expect(after.prefix.seats.map((x: { seat: string }) => x.seat)).toEqual(['kb']);
+    expect((after.prefix.seats as { seat: string }[]).map(x => x.seat)).toEqual(['kb']);
     // ka held the floor; it must not be left dangling.
     expect(after.floor.holder).toBe('kb');
   });
