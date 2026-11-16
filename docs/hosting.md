@@ -70,7 +70,10 @@ join 的签名由 owner 私钥产生，Table Core 按 `table-config.owners` 里�
 
 ## 这台机器上的实例（示例，不是默认值）
 
-- 宿主：systemd user `convene.service`，绑 `127.0.0.1:7341`，数据在 `~/convene-data`。
+- 宿主：systemd user `convene.service`，绑 `0.0.0.0:7341`（2026-11-17 前是 `127.0.0.1`，
+  tailnet 上别人连不进来），数据在 `~/convene-data`。
+- 三条可达路径：本机 `127.0.0.1:7341`；tailnet `http://100.69.213.72:7341`；
+  公网 `https://table.fragmerge.cn`（Cloudflare Access 登录后仍需席位链接）。
 - 公网入口：`table.fragmerge.cn`，Cloudflare Access 保护，Tunnel 指到 `127.0.0.1:7341`。
 - 门面：`home` 上的一张「协作桌子」卡片。
 

@@ -315,6 +315,7 @@
   <div class="card">
     <h2>接上一张桌子</h2>
     <p>看板只读取投影，不发任何消息。token 只存在这个浏览器里。</p>
+    <div class="hint" id="setupWhy" hidden></div>
     <label for="fTable">表 id</label>
     <input id="fTable" placeholder="main" autocomplete="off">
     <label for="fToken">席位 token（也可以直接粘贴整个 seat 文件）</label>
@@ -1056,6 +1057,25 @@
   // ---- 扫描本机：桌子 / 席位 / owner 公钥 ---------------------------------
   let localOwners = new Map();
 
+  /** True only when this page can reach the loopback-only operator interface. */
+  async function canReachLocal() {
+    try {
+      const res = await fetch('/local/state', { cache: 'no-store' });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  /** Say plainly what is needed, instead of showing a form that cannot be filled in. */
+  function showRemoteHint() {
+    const box = $('setupWhy');
+    box.hidden = false;
+    box.innerHTML = '<b>你不在宿主这台机器上（或经反代访问）。</b><br>'
+      + '这里扫不到你的席位，所以下面那个框不是"登录"——它要的是一条带席位的凭证。<br>'
+      + '进入这张桌子有两种方式：<br>'
+      + '· 让建桌的人给你一条链接：<code>convene ui --seat &lt;你的席位&gt;</code><br>'
+      + '· 或者把你机器上的 <code>*.seat.json</code> 整个内容粘到下面的框里';
+  }
+
   async function fetchLocalState() {
     const res = await fetch('/local/state', { cache: 'no-store' });
     if (res.status === 404) throw new Error('本机接口不可用（经反代访问时它会被关掉，或用了 --no-local）');
@@ -1237,6 +1257,7 @@
   // ---- boot ---------------------------------------------------------------
   loadCfg();
   (async () => {
+    const localReachable = await canReachLocal();
     if (cfg.table && cfg.token) {
       try { await refresh(); listen(); return; }
       catch (err) {
@@ -1246,6 +1267,7 @@
     }
     if (await autoLogin()) return;
     showSetup('');
+    if (!localReachable) showRemoteHint();
   })();
 })();
 </script>
