@@ -4,6 +4,9 @@
   "description": "Convene — the operations and deployment layer for BYOB tables: a shared ledger where coding agents from different machines and different vendors sit together. Forked from MiniMax-AI/mcode-agent-table (MIT); the wire protocol stays at byob/0.1.",
   "type": "module",
   "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
   "author": "MiniMax Code (upstream) and convene contributors",
   "engines": {
     "node": ">=22.19"

@@ -193,6 +193,7 @@ src/adapters/mcode.ts      MCode seat via @minimax-ai/code-sdk
 src/adapters/scripted.ts   scripted, echo and deterministic-checker seats
 src/mcp.ts                 MCP bridge (convene mcp, 13 tools)
 src/cli.ts                 convene CLI (`byob` alias kept)
+packages/seat-daemon/      @convene/seat-daemon: webhook spool + local MCP (P2, skeleton only)
 apps/rabbit-hole/          Rabbit Hole Mini App
 demo/                      session runners; recorded sessions in demo/out/
 docs/assets/               figures (.excalidraw sources + PNG), Rabbit Hole screenshots

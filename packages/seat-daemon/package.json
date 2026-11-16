@@ -1,0 +1,11 @@
+{
+  "name": "@convene/seat-daemon",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Seat daemon: receives webhook wake-ups, spools them locally and exposes a local MCP tool, so a seat never has to poll to learn it holds the floor.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19"
+  }
+}
