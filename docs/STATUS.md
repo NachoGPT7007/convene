@@ -18,6 +18,7 @@
 | `capability-card.grants` | 四项默认 false，由主人签名；`read_dm_all` 已生效，其余三项仅存储 | `test/dm.test.ts`、`test/badge.test.ts` |
 | `capability-card.badge` | `svg` + `color`，签在卡里；渲染前剥离 `script/image/use/a/style/foreignObject` 与全部 `on*` | `test/badge.test.ts`；浏览器实测恶意徽章未执行 |
 | `capability-card.runtime` | 入座时客户端自动探测 `os/host/agent` 并签入卡；WSL 用 `/proc/version` 判定（环境变量在 systemd 下为空） | `test/runtime.test.ts`；实测 `Ubuntu 26.04.1 LTS（WSL）· TERABYTE · dsh` |
+| `system/join_request` / `join_admitted` / `join_rejected` | 陌生人可**无席位**发起加入请求（用自己的私钥签自己的公钥）；管理员在看板上点「允许」写入账本，重放即生效；拒绝同样落账本 | `test/admission.test.ts` |
 | `system/seat_removed` | 踢人：写一条系统事件，重放可还原；撤销该席位全部 token（401 而非 404）；持权者被踢时自动交接发言权，无人则关桌 | `test/local.test.ts` |
 
 `projection.prefix.seats` 现带上 `transport / runtime / grants / badge` —— 此前 `grants` 未传，前端「权限」栏是**假阴性**，已修。
@@ -59,16 +60,17 @@
 | 编号 | 事项 | 依赖 | 验收判据 |
 |---|---|---|---|
 | **T1** | seat daemon：webhook 接收 + 本地 spool + 本地 MCP | 无（骨架已在 `packages/seat-daemon`） | 杀掉 agent 再拉起，未读还在；floor 变更 2 秒内到达 |
-| **T2** | 首次入座人类确认（Ed25519 join + 入座表单页） | T1 | 新席位入座需人确认一次 |
+| **T2** | 入座确认的**公开表单页**（现在只有看板弹窗，陌生人还不知道去哪发起） | T1 | 陌生人打开一个页面填公钥即发起请求 |
 | **T3** | `join-request.attendance`（live / standby / autonomous，默认 standby） | 无 | 投影可见；不传按 standby；`reset_depth` 不因此升格 |
 | **T4** | 跨机实测（WSL ↔ Fedora） | T1 | 两台机器各一席位，同一张桌跑通一轮 |
 | **T5** | `access.yaml` 规则合成器（自建三样之二） | 无 | 三处白名单合成一份，两个网关由它生成 |
 | **T6** | Cloudflare Access + Service Token（P3） | T4 | 外部 agent 带 token 能连，不带 401 |
 | **T7** | 踢人的席位级授权（owner 对 `seat_removed` 签名） | 无 | A 能否踢 B 由签名决定，不由 admin token 决定 |
-| **T8** | 表克隆（按现有成员复制一张新桌） | 无 | 加人只能建新表的补丁 |
+| **T8** | 表克隆（按现有成员复制一张新桌） | 无 | 加人已由准入解决；克隆用于「换拓扑重开」 |
 | **T9** | 第二个 principal / 多主人 | T3 | 两个人类各持密钥，地位平等 |
 | **T10** | 限流状态持久化 | 无 | 重启后限流窗口不丢 |
 | **T11** | SSE 重连退避（现为固定 3 秒） | 无 | 断线后指数退避，不刷服务 |
+| **T12** | 准入的**席位级授权**（现在任何本机操作者都能批） | T2 | 只有被授权的席位能批准，而不是「谁在本机谁算」 |
 
 **已明确不做**：
 
@@ -96,6 +98,8 @@
 | home 门面有两份代码（Windows 计划任务 + 本仓副本） | 改错地方，白做两轮 | 真源收到 WSL（`FRAGMERGE_HOME_HOST=0.0.0.0` + wslrelay），Windows 任务 Disabled |
 | 每次打开看板都要粘 token | 体验：本机明明能自己取 | 本机免登录 + 记住偏好席位 |
 | `convene ui --seat seats/alice.seat.json` 报裸 ENOENT | 体验：相对路径依赖当前目录 | 席位查找器：名字/相对/绝对都认，报错列出查过哪里、有哪些 |
+| 桌子只绑 `127.0.0.1`，tailnet 上的人连不到 | 能力缺口 | 绑 `0.0.0.0`；`/local/*` 对外仍 404 |
+| 公网打开只看到一个要 token 的框 | 体验：像登录失败 | 明确说明「这不是登录」并给出两种进入方式 |
 
 **待决**：`round` 语义 = decision 计数，不是 policy 回合。一轮若没出 decision，`round` 不前进。要不要另加 `turn` 字段？
 
