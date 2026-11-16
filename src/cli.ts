@@ -100,6 +100,8 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene dm inbox --seat seat.json [--keep-unread]  read your direct messages, grouped by seat
   convene ui --seat seat.json [--open]               print a one-click link to the dashboard
   convene kick <table> <seat> [--url]                remove a seat; its token stops working at once
+  convene request-join <table> --owner owner.json --seat <name> [--url]
+                                                     ask to be let in; an operator approves it
   convene pass --seat seat.json [text]
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
@@ -215,6 +217,19 @@ async function run() {
     case 'propose': return console.log(JSON.stringify(await seatFrom(flags.seat).propose(pos.join(' '), JSON.parse(flags.effects))));
     case 'approve': return console.log(JSON.stringify(await loadOwner(flags.owner).decide(url, pos[0], pos[1], flags.reject ? 'reject' : 'approve', flags.reason)));
     case 'mcp': { const { main } = await import('./mcp.js'); return main(); }
+    case 'request-join': {
+      const table = pos[0];
+      if (!table) throw new Error('request-join <table> --owner owner.json --seat <name>');
+      if (!flags.owner) throw new Error('request-join needs --owner owner.json');
+      if (!flags.seat) throw new Error('request-join needs --seat <name>');
+      const req = loadOwner(flags.owner).signJoinRequest(table, { seat: flags.seat });
+      const res = await fetch(`${url}/v0.1/tables/${encodeURIComponent(table)}/join-requests`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: { message?: string }; seq?: number };
+      if (!res.ok) throw new Error(j.error?.message ?? `HTTP ${res.status}`);
+      return console.log(`已发出加入请求（账本 #${j.seq}）。等桌上的人批准后，再跑 convene join。`);
+    }
     case 'kick': {
       const [table, seat] = pos;
       if (!table || !seat) throw new Error('kick <table> <seat>');

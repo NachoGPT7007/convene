@@ -1,7 +1,7 @@
 // TableHost: owns many tables, seat bearer tokens, persistence and sub-tables.
 import { Table } from './table.js';
 import { JsonlStore } from './store.js';
-import { ByobError, type Entry, type JoinRequest, type TableConfig } from './protocol.js';
+import { ByobError, type Entry, type JoinRequest, type JoinRequestPublic, type TableConfig } from './protocol.js';
 import { sha256, token } from './crypto.js';
 
 const ADMIN = '__admin__';
@@ -58,6 +58,10 @@ export class TableHost {
       );
     });
   }
+
+  requestJoin(id: string, req: JoinRequestPublic) { return this.get(id).requestJoin(req); }
+  admitJoin(id: string, owner: string, reason?: string) { return this.get(id).admitJoin(owner, reason); }
+  rejectJoin(id: string, owner: string, reason?: string) { return this.get(id).rejectJoin(owner, reason); }
 
   /** Remove a seat and revoke every token that belonged to it: a removed seat cannot act. */
   removeSeat(id: string, seat: string) {

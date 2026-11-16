@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import {
   PROTOCOL, ByobError, estimateTokens,
   type Entry, type TableConfig, type Seat, type Task, type JoinRequest, type PostRequest,
-  type OwnerDecision, type Projection, type Effect,
+  type OwnerDecision, type Projection, type Effect, type JoinRequestPublic,
 } from './protocol.js';
 import { makePolicy, matchVisibility, type Policy, type PolicyState } from './policy.js';
 import { canonical, sha256, verifyPayload } from './crypto.js';
@@ -39,6 +39,10 @@ export class Table extends EventEmitter {
   roundNo = 0;
   usedNonces = new Set<string>();
   cursors = new Map<string, number>();
+  /** Owners admitted after creation (convene). Rebuilt from join_admitted events on replay. */
+  admitted = new Map<string, string>();
+  /** Join requests waiting for an operator's yes. Rebuilt from the ledger the same way. */
+  pendingJoins = new Map<string, { seat: string; publicKey: string; seq: number }>();
   /** Convene: token buckets and recent bodies per sender->recipient pair. Never on the ledger. */
   private dmBuckets = new Map<string, { tokens: number; last: number }>();
   private dmRecent = new Map<string, { body: string; at: number }[]>();
@@ -82,6 +86,14 @@ export class Table extends EventEmitter {
           if (d.depth_reset) this.botDepth = 0;
           this.savedHolder = (d.resume as string) ?? null;
         }
+        if (e.event === 'join_request') {
+          this.pendingJoins.set(d.owner as string, { seat: d.seat as string, publicKey: d.public_key as string, seq: e.seq });
+        }
+        if (e.event === 'join_admitted') {
+          this.admitted.set(d.owner as string, d.public_key as string);
+          this.pendingJoins.delete(d.owner as string);
+        }
+        if (e.event === 'join_rejected') this.pendingJoins.delete(d.owner as string);
         if (e.event === 'seat_removed') {
           const gone = d.seat as string;
           this.seats.delete(gone);
@@ -119,11 +131,49 @@ export class Table extends EventEmitter {
     }
   }
 
+  /** A key the table accepts: the ones in the config, plus anyone an operator admitted later. */
+  ownerKey(ownerId: string): { public_key: string } | undefined {
+    const configured = this.cfg.owners[ownerId];
+    if (configured) return configured;
+    const admitted = this.admitted.get(ownerId);
+    return admitted ? { public_key: admitted } : undefined;
+  }
+
+  /**
+   * Ask to be let in. No seat needed: the signature over the requester's own public key is what
+   * proves they hold it. An operator answers with admitJoin or rejectJoin.
+   */
+  requestJoin(req: JoinRequestPublic): Entry {
+    const payload = { table: this.cfg.id, owner: req.owner, seat: req.seat, public_key: req.publicKey, nonce: req.nonce };
+    if (!verifyPayload(req.publicKey, payload, req.signature)) throw new ByobError('E_BAD_SIGNATURE', 'join request signature does not verify against the key it carries');
+    if (this.usedNonces.has(req.nonce)) throw new ByobError('E_REPLAY', 'nonce already used');
+    if (this.ownerKey(req.owner)) throw new ByobError('E_CONFIG', `owner ${req.owner} already holds a key on this table`);
+    if (this.seats.has(req.seat)) throw new ByobError('E_SEAT_TAKEN', `seat ${req.seat} already joined`);
+    return this.write({ seat: 'core', kind: 'system', event: 'join_request',
+      body: `${req.owner} asks to join as ${req.seat}`,
+      data: { owner: req.owner, seat: req.seat, public_key: req.publicKey, nonce: req.nonce, signature: req.signature } });
+  }
+
+  /** Operator's yes: the key goes on the ledger, so replay admits the same owner. */
+  admitJoin(ownerId: string, reason?: string): Entry {
+    const pending = this.pendingJoins.get(ownerId);
+    if (!pending) throw new ByobError('E_NOT_FOUND', `no join request from ${ownerId}`);
+    return this.write({ seat: 'core', kind: 'system', event: 'join_admitted',
+      body: `${ownerId} admitted${reason ? `: ${reason}` : ''}`,
+      data: { owner: ownerId, seat: pending.seat, public_key: pending.publicKey } });
+  }
+
+  rejectJoin(ownerId: string, reason?: string): Entry {
+    if (!this.pendingJoins.has(ownerId)) throw new ByobError('E_NOT_FOUND', `no join request from ${ownerId}`);
+    return this.write({ seat: 'core', kind: 'system', event: 'join_rejected',
+      body: `${ownerId} refused${reason ? `: ${reason}` : ''}`, data: { owner: ownerId } });
+  }
+
   // ---------- joining ----------
   join(req: JoinRequest): Seat {
     check('join-request', req);
     if (req.protocol !== PROTOCOL) throw new ByobError('E_PROTOCOL', `unsupported protocol ${req.protocol}`);
-    const owner = this.cfg.owners[req.owner];
+    const owner = this.ownerKey(req.owner);
     if (!owner) throw new ByobError('E_NOT_OWNER', `owner ${req.owner} is not registered on table ${this.cfg.id}`);
     if (this.usedNonces.has(req.nonce)) throw new ByobError('E_REPLAY', 'nonce already used');
     const { signature, ...rest } = req;

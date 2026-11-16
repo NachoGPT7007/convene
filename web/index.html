@@ -204,6 +204,17 @@
   .member { display: grid; grid-template-columns: 104px repeat(4, minmax(0, 1fr)) auto; gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; align-items: center; }
   .member .mono { color: var(--fg); }
   .desk-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  /* 加入请求 */
+  #joinRequests { margin: 0 18px 8px; display: grid; gap: 8px; }
+  #joinRequests[hidden] { display: none; }
+  .join-req { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); border-radius: 12px;
+    background: color-mix(in srgb, var(--warn) 8%, transparent); padding: 10px 14px; font-size: 13px; }
+  .join-req .who { font-weight: 600; }
+  .join-req .meta { color: var(--muted); font-size: 12px; }
+  .join-req .ops { margin-left: auto; display: flex; gap: 8px; }
+  .join-req .yes { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
@@ -246,6 +257,8 @@
 </section>
 
 
+
+<section id="joinRequests" hidden aria-label="加入请求"></section>
 
 <section class="panel" id="composer" aria-label="发送">
   <div class="seg" role="group" aria-label="发送方式">
@@ -729,6 +742,49 @@
     }
   }
 
+
+  // ---- 加入请求：桌上有生人想进来时，弹在输入框上方 ------------------------
+  /** Requests with no admit/reject after them are still open. */
+  function pendingJoinRequests(tail) {
+    const open = new Map();
+    for (const e of tail) {
+      const d = e.data || {};
+      if (e.event === 'join_request' && d.owner) open.set(d.owner, { owner: d.owner, seat: d.seat, seq: e.seq });
+      if ((e.event === 'join_admitted' || e.event === 'join_rejected') && d.owner) open.delete(d.owner);
+    }
+    return [...open.values()];
+  }
+
+  async function answerJoin(owner, decision) {
+    const res = await fetch(`/local/tables/${encodeURIComponent(cfg.table)}/join-requests/${encodeURIComponent(owner)}/${decision}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    if (!res.ok) { alert('处理失败：HTTP ' + res.status + (res.status === 404 ? '（经反代访问时这个操作只能在本机做）' : '')); return; }
+    await refresh();
+  }
+
+  function renderJoinRequests(tail) {
+    const box = $('joinRequests');
+    const list = pendingJoinRequests(tail);
+    box.replaceChildren();
+    box.hidden = !list.length;
+    for (const r of list) {
+      const card = el('div', 'join-req');
+      card.appendChild(el('span', 'who', r.owner));
+      card.appendChild(el('span', 'meta', `想以 @${r.seat} 加入 · 账本 #${r.seq}`));
+      const ops = el('div', 'ops');
+      const yes = el('button', 'yes', '允许');
+      yes.type = 'button';
+      yes.addEventListener('click', () => answerJoin(r.owner, 'admit'));
+      const no = el('button', '', '拒绝');
+      no.type = 'button';
+      no.addEventListener('click', () => answerJoin(r.owner, 'reject'));
+      ops.append(yes, no);
+      card.appendChild(ops);
+      box.appendChild(card);
+    }
+  }
+
   function render(p) {
     const seats = p.prefix.seats || [];
     state.mySeat = p.seat || cfg.seat || '';
@@ -747,6 +803,7 @@
     renderTail(state.tail);
     renderInbox(state.tail);
     renderTasks(p.my_tasks || []);
+    renderJoinRequests(state.tail);
     updateComposer();
   }
 

@@ -81,6 +81,15 @@ export interface JoinRequest {
   signature: string;
 }
 
+/** A request to be let in, signed by the requester's own key: no seat needed to ask. */
+export interface JoinRequestPublic {
+  owner: string;
+  seat: string;
+  publicKey: string;
+  nonce: string;
+  signature: string;
+}
+
 export interface OwnerDecision {
   owner: string; task: string; decision: 'approve' | 'reject'; reason?: string; nonce: string; signature: string;
 }

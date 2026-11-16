@@ -67,6 +67,13 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
             host.get(id).close(String(body.reason ?? 'closed from the table list'));
             return json(res, 200, { ok: true, table: id, status: 'closed' });
           }
+          // The operator answers a pending request. Loopback only, like the rest of /local.
+          if (req.method === 'POST' && parts[3] === 'join-requests' && parts[4] && (parts[5] === 'admit' || parts[5] === 'reject')) {
+            const owner = parts[4];
+            const body = (await readBody(req)) as { reason?: string };
+            const e = parts[5] === 'admit' ? host.admitJoin(id, owner, body.reason) : host.rejectJoin(id, owner, body.reason);
+            return json(res, 200, { ok: true, owner, decision: parts[5], seq: e.seq });
+          }
           if (req.method === 'POST' && parts[3] === 'seats' && parts[4] && parts[5] === 'remove') {
             host.removeSeat(id, parts[4]);
             return json(res, 200, { ok: true, removed: parts[4], table: id });
@@ -100,6 +107,8 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
       const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/.+$/, 'tasks/:id').replace(/^seats\/[^/]+\/remove$/, 'seats/:seat/remove')}`;
       switch (route) {
         case 'POST seats': return json(res, 201, host.join(id, (await readBody(req)) as never));
+        // Anyone may ask to be let in; the signature over their own public key is the proof.
+        case 'POST join-requests': return json(res, 201, t.requestJoin((await readBody(req)) as never));
         case 'POST entries': return json(res, 201, t.post(host.auth(id, bearer), (await readBody(req)) as never));
         case 'GET projection': {
           const s = url.searchParams.get('since');

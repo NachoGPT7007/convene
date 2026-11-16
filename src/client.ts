@@ -12,6 +12,14 @@ export class Owner {
     const signature = signPayload(this.keys.privateKey, { table, seat: j.seat, owner: this.id, kind: j.kind, role: j.role, card: j.card, nonce: n });
     return { protocol: PROTOCOL, seat: j.seat, owner: this.id, kind: j.kind, role: j.role, card: j.card, nonce: n, signature };
   }
+  /** Ask to be let in. The signature over public_key is what proves the asker holds the key. */
+  signJoinRequest(table: string, j: { seat: string }) {
+    const n = nonce();
+    const publicKey = this.publicKey;
+    const signature = signPayload(this.keys.privateKey, { table, owner: this.id, seat: j.seat, public_key: publicKey, nonce: n });
+    return { owner: this.id, seat: j.seat, publicKey, nonce: n, signature };
+  }
+
   signDecision(table: string, task: string, decision: 'approve' | 'reject', reason?: string) {
     const n = nonce();
     return { owner: this.id, task, decision, reason, nonce: n, signature: signPayload(this.keys.privateKey, { table, owner: this.id, task, decision, reason, nonce: n }) };
