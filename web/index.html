@@ -125,6 +125,48 @@
   .card .err { color: var(--err); font-size: 12px; margin-top: 10px; min-height: 1em; }
   .hint { color: var(--muted); font-size: 11.5px; margin-top: 14px; line-height: 1.5; }
   .hint code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+  /* composer：发言 / 私信 */
+  #composer { display: flex; gap: 10px; align-items: flex-end; padding: 12px 14px; flex-wrap: wrap;
+    margin: 0 18px 18px; position: sticky; bottom: 0; z-index: 9;
+    background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(10px); }
+  #composer textarea {
+    flex: 1 1 320px; min-height: 46px; max-height: 140px; resize: vertical;
+    padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 13.5px;
+  }
+  #composer textarea:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; flex: 0 0 auto; }
+  .seg button { border: 0; border-radius: 0; background: transparent; padding: 8px 13px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  #dmTo { width: 128px; flex: 0 0 auto; display: none; }
+  #dmTo.show { display: block; }
+  #composer input[type=text] {
+    padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+  }
+  .send { background: var(--accent); border-color: var(--accent); color: #fff; padding: 9px 18px; flex: 0 0 auto; }
+  .send:disabled { opacity: .45; cursor: not-allowed; }
+  #sendHint { flex: 1 0 100%; font-size: 11.5px; color: var(--muted); margin: 0; }
+  #sendHint.err { color: var(--err); }
+  .dm-btn { border: 0; background: transparent; color: var(--muted); padding: 2px 6px; font-size: 11px; }
+  .dm-btn:hover { color: var(--dm); }
+
+  /* 收件箱 */
+  #inbox { margin: 0 18px 8px; display: none; }
+  #inbox.show { display: block; }
+  .thread { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .thread:last-child { border-bottom: 0; }
+  .thread-head { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+  .thread-head b { color: var(--fg); }
+  .bubble { padding: 6px 10px; border-radius: 10px; margin: 4px 0; max-width: 78%; font-size: 13px; overflow-wrap: anywhere; }
+  .bubble.in { background: color-mix(in srgb, var(--dm) 12%, transparent); border: 1px solid color-mix(in srgb, var(--dm) 30%, var(--line)); }
+  .bubble.out { background: var(--panel-2); border: 1px solid var(--line); margin-left: auto; }
+  .bubble .seq { font-size: 10.5px; color: var(--muted); margin-left: 8px; }
+
+  /* 任务操作 */
+  .task button { padding: 3px 9px; font-size: 11.5px; }
+  .task .ops { margin-left: auto; display: flex; gap: 6px; }
+  .task-note { color: var(--muted); font-size: 11.5px; padding: 4px 14px 10px; }
 </style>
 </head>
 <body>
@@ -137,6 +179,7 @@
   <span class="pill">发言权 <b id="pFloor">—</b></span>
   <span class="spacer"></span>
   <span class="pill"><span class="dot" id="dot"></span><span id="link">未连接</span></span>
+  <button id="btnInbox" title="收件箱">私信</button>
   <button id="btnTheme" title="切换主题">主题</button>
   <button id="btnSetup">设置</button>
 </header>
@@ -152,9 +195,26 @@
   </section>
 </main>
 
+<section class="panel" id="inbox" aria-label="私信">
+  <h2>私信 <span class="count" id="inboxCount"></span></h2>
+  <div id="inboxList"></div>
+</section>
+
 <section class="panel" id="tasks">
   <h2>我的任务 <span class="count" id="taskCount"></span></h2>
   <div id="taskList"><div class="empty">没有指派给我的任务</div></div>
+  <div class="task-note">审批要主人私钥签名，页面不持有私钥：用 <code>convene approve &lt;table&gt; &lt;task&gt; --owner owner.json</code>。</div>
+</section>
+
+<section class="panel" id="composer" aria-label="发送">
+  <div class="seg" role="group" aria-label="发送方式">
+    <button id="btnSay" type="button" aria-pressed="true">发言</button>
+    <button id="btnDm" type="button" aria-pressed="false">私信</button>
+  </div>
+  <input id="dmTo" type="text" placeholder="@bob" aria-label="私信收件人" autocomplete="off">
+  <textarea id="composerInput" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）" aria-label="内容"></textarea>
+  <button class="send" id="btnSend" type="button">发送</button>
+  <p id="sendHint">发言需要持有发言权；私信不用。</p>
 </section>
 
 <div id="setup" hidden>
@@ -298,6 +358,111 @@
     return body;
   }
 
+  /** Server errors in words a person can act on. */
+  const ERROR_TEXT = {
+    E_NOT_FLOOR: '现在不轮到你发言：发言权在别处。等一下，或者改用「私信」。',
+    E_TABLE_CLOSED: '桌子已经关闭，讨论平面不再接受发言。',
+    E_DM_RATE_LIMIT: '私信发得太快：每对席位突发 5 条，之后每 2 分钟 1 条。',
+    E_DM_DUPLICATE: '这条内容 10 分钟内已经发给同一个人了。',
+    E_ADDRESS: '收件人要写成 @席位，例如 @bob。',
+    E_SCHEMA: '内容不符合协议要求（比如私信没有正文）。',
+    E_UNAUTHORIZED: 'token 无效或已过期。',
+    E_NOT_DECIDER: '这个席位没有决定权。',
+    E_TASK_STATE: '任务状态已经变了，刷新后再试。',
+    E_SELF_VERIFY: '不能核验自己的回执，要另一个席位来核。',
+    E_NOT_OWNER: '这一步只有任务的执行席位能做。',
+  };
+
+  async function postEntry(payload) {
+    const res = await fetch(tablePath('entries'), {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + cfg.token, 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    if (!res.ok) {
+      const code = (body && body.error && body.error.code) || ('HTTP_' + res.status);
+      const raw = (body && body.error && body.error.message) || ('HTTP ' + res.status);
+      const err = new Error(ERROR_TEXT[code] || raw);
+      err.code = code;
+      throw err;
+    }
+    return body;
+  }
+
+  // ---- 状态：谁能做什么 --------------------------------------------------
+  let mode = 'say'; // 'say' | 'dm'
+  const state = { open: false, canSay: false, mySeat: '', human: false, seats: [], holder: null, tail: [] };
+
+  function updateComposer() {
+    const hint = $('sendHint');
+    const btn = $('btnSend');
+    hint.className = '';
+    if (!state.open) {
+      btn.disabled = true;
+      hint.textContent = '桌子已关闭，只剩只读。';
+      hint.className = 'err';
+      return;
+    }
+    if (mode === 'dm') {
+      btn.disabled = false;
+      hint.textContent = '私信不受发言权限制；只有收件人和签了 read_dm_all 的席位能看。';
+      return;
+    }
+    if (!state.canSay) {
+      btn.disabled = true;
+      hint.textContent = `发言权不在你手上（当前 @${state.holder || '空'}）。机器席位要等轮到；人类席位不受限。也可以改用「私信」。`;
+      return;
+    }
+    btn.disabled = false;
+    hint.textContent = state.human ? '你是人类席位，可以直接发言。' : '轮到你，可以发言。';
+  }
+
+  function setMode(next) {
+    mode = next;
+    $('btnSay').setAttribute('aria-pressed', String(next === 'say'));
+    $('btnDm').setAttribute('aria-pressed', String(next === 'dm'));
+    $('dmTo').classList.toggle('show', next === 'dm');
+    if (next === 'dm') $('dmTo').focus();
+    updateComposer();
+  }
+
+  async function send() {
+    const input = $('composerInput');
+    const body = input.value.trim();
+    if (!body) return;
+    const hint = $('sendHint');
+    $('btnSend').disabled = true;
+    try {
+      if (mode === 'say') {
+        await postEntry({ kind: 'say', body });
+      } else {
+        const to = $('dmTo').value.split(/[,，\s]+/).filter(Boolean).map(a => (a.startsWith('@') ? a : '@' + a));
+        if (!to.length) throw new Error('填一个收件人，例如 @bob');
+        await postEntry({ kind: 'dm', to, body });
+      }
+      input.value = '';
+      hint.className = '';
+      hint.textContent = '已发送。';
+      await refresh();
+      updateComposer();
+    } catch (err) {
+      hint.textContent = err.message || String(err);
+      hint.className = 'err';
+      $('btnSend').disabled = false;
+    }
+  }
+
+  async function taskAction(kind, task, extra) {
+    try {
+      await postEntry({ kind, task, ...extra });
+      await refresh();
+    } catch (err) {
+      alert(err.message || String(err));
+    }
+  }
+
   // ---- render -------------------------------------------------------------
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -316,10 +481,20 @@
       row.appendChild(badgeNode(s));
       const right = el('div');
       const name = el('div', 'name', '@' + s.seat);
-      if (cfg.seat && s.seat === cfg.seat) {
+      if (s.seat === state.mySeat) {
         const me = el('span', 'tag human', '我');
         me.style.marginLeft = '6px';
         name.appendChild(me);
+      } else {
+        const dm = el('button', 'dm-btn', '私信');
+        dm.type = 'button';
+        dm.title = '给 @' + s.seat + ' 发私信';
+        dm.addEventListener('click', () => {
+          $('dmTo').value = '@' + s.seat;
+          setMode('dm');
+          $('composerInput').focus();
+        });
+        name.appendChild(dm);
       }
       right.appendChild(name);
       const meta = el('div', 'meta');
@@ -383,18 +558,90 @@
       const detail = el('span', '', (t.executor ? '执行 ' + t.executor : '待指派') + ' · ' + (t.owner || ''));
       detail.style.color = 'var(--muted)';
       row.appendChild(detail);
+
+      const ops = el('div', 'ops');
+      const mine = t.executor === state.mySeat;
+      if (state.open && mine && (t.state === 'approved' || t.state === 'stalled')) {
+        const b = el('button', '', '开始');
+        b.type = 'button';
+        b.addEventListener('click', () => taskAction('status', t.id, { state: 'running', body: 'started from the dashboard' }));
+        ops.appendChild(b);
+      }
+      if (state.open && mine && (t.state === 'approved' || t.state === 'running')) {
+        const b = el('button', '', '发回执');
+        b.type = 'button';
+        b.addEventListener('click', () => {
+          const body = prompt('回执内容（做了什么、结果如何）');
+          if (body) taskAction('receipt', t.id, { body });
+        });
+        ops.appendChild(b);
+      }
+      if (state.open && !mine && t.state === 'reported') {
+        for (const [label, result] of [['通过', 'pass'], ['打回', 'fail']]) {
+          const b = el('button', '', label);
+          b.type = 'button';
+          b.addEventListener('click', () => taskAction('verify', t.id, { result, body: 'verified from the dashboard' }));
+          ops.appendChild(b);
+        }
+      }
+      if (ops.children.length) row.appendChild(ops);
       box.appendChild(row);
     }
   }
 
+  /** 私信：和每个席位的一段对话，收发票都列出来。 */
+  function renderInbox(tail) {
+    const list = $('inboxList');
+    list.replaceChildren();
+    const dms = tail.filter(e => e.kind === 'dm');
+    $('inboxCount').textContent = dms.length ? dms.length + ' 条' : '';
+    if (!dms.length) { list.appendChild(el('div', 'empty', '还没有私信')); return; }
+
+    const groups = new Map();
+    for (const e of dms) {
+      const peer = e.seat === state.mySeat
+        ? String((e.to || []).find(a => a !== '@' + state.mySeat) || '').replace(/^@/, '')
+        : e.seat;
+      if (!groups.has(peer)) groups.set(peer, []);
+      groups.get(peer).push(e);
+    }
+
+    for (const [peer, arr] of groups) {
+      const thread = el('div', 'thread');
+      const head = el('div', 'thread-head');
+      head.appendChild(el('b', '', '@' + peer));
+      head.appendChild(el('span', '', '· ' + arr.length + ' 条'));
+      thread.appendChild(head);
+      for (const e of arr) {
+        const out = e.seat === state.mySeat;
+        const bubble = el('div', 'bubble ' + (out ? 'out' : 'in'));
+        bubble.appendChild(document.createTextNode(e.body || '（空）'));
+        bubble.appendChild(el('span', 'seq', '#' + e.seq));
+        thread.appendChild(bubble);
+      }
+      list.appendChild(thread);
+    }
+  }
+
   function render(p) {
+    const seats = p.prefix.seats || [];
+    state.mySeat = p.seat || cfg.seat || '';
+    state.seats = seats;
+    state.open = p.status === 'open';
+    state.holder = p.floor.holder;
+    state.human = seats.some(s => s.seat === state.mySeat && s.kind === 'human');
+    state.canSay = state.open && (p.floor.you_have_floor === true || state.human);
+    state.tail = p.tail || [];
+
     $('pTable').textContent = p.table;
     $('pStatus').textContent = p.status === 'open' ? '进行中' : '已关闭';
     $('pRound').textContent = String((p.floor.round || 0) + 1);
     $('pFloor').textContent = p.floor.holder ? '@' + p.floor.holder + (p.floor.you_have_floor ? '（你）' : '') : '空';
-    renderSeats(p.prefix.seats || [], p.floor.holder);
-    renderTail(p.tail || []);
+    renderSeats(seats, p.floor.holder);
+    renderTail(state.tail);
+    renderInbox(state.tail);
     renderTasks(p.my_tasks || []);
+    updateComposer();
   }
 
   function setLink(state, text) {
@@ -477,6 +724,18 @@
   }
 
   $('btnConnect').addEventListener('click', connect);
+  $('btnSay').addEventListener('click', () => setMode('say'));
+  $('btnDm').addEventListener('click', () => setMode('dm'));
+  $('btnSend').addEventListener('click', send);
+  $('composerInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  $('dmTo').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+  $('btnInbox').addEventListener('click', () => {
+    const box = $('inbox');
+    box.classList.toggle('show');
+    if (box.classList.contains('show')) renderInbox(state.tail);
+  });
   $('btnCancel').addEventListener('click', () => {
     if (cfg.table && cfg.token) $('setup').hidden = true;
   });
