@@ -1,5 +1,5 @@
 // @byob/seat — client SDK for sitting at a BYOB table over HTTP + SSE.
-import { PROTOCOL, ByobError, type CapabilityCard, type Entry, type PostRequest, type Projection, type Task, type Effect, type ErrorCode } from './protocol.js';
+import { PROTOCOL, ByobError, type Badge, type CapabilityCard, type Entry, type PostRequest, type Projection, type Task, type Effect, type ErrorCode } from './protocol.js';
 import { generateOwnerKeys, nonce, signPayload, type OwnerKeys } from './crypto.js';
 
 /** An owner holds the private key. It signs seat joins and approvals; bots never hold other owners' keys. */
@@ -90,10 +90,27 @@ export class SeatClient {
   }
 }
 
+/** The colour a seat without a badge falls back to (the same blue the project uses). */
+export const DEFAULT_BADGE_COLOR = '#4D6BFE';
+
+export interface RenderedBadge { svg?: string; color: string; initial: string }
+
+/**
+ * The badge as a renderer should draw it. A seat that never sent one still gets an identity: its
+ * first letter on the default colour. `svg` is markup from the ledger — sanitise it before mounting.
+ */
+export function badgeFor(s: { seat: string; badge?: Badge | null }): RenderedBadge {
+  const b = s.badge ?? undefined;
+  return { svg: b?.svg, color: b?.color ?? DEFAULT_BADGE_COLOR, initial: (s.seat[0] ?? '?').toUpperCase() };
+}
+
 /** Render a projection as text for a model. The prefix renders identically while it is unchanged (cache-friendly). */
 export function renderPrefix(p: Projection): string {
-  const seats = (p.prefix.seats as { seat: string; owner: string; kind: string; role?: string; bot: string; proxy: boolean; capabilities: { resource: string; actions: string[] }[] }[])
-    .map(s => `- @${s.seat} (owner: ${s.owner}, ${s.kind}${s.role ? ', role: ' + s.role : ''}, bot: ${s.bot}${s.proxy ? ', PROXY' : ''}) can: ${s.capabilities.map(c => `${c.resource}[${c.actions.join('|')}]`).join(', ') || 'talk only'}`)
+  const seats = (p.prefix.seats as { seat: string; owner: string; kind: string; role?: string; bot: string; proxy: boolean; capabilities: { resource: string; actions: string[] }[]; badge?: Badge | null }[])
+    .map(s => {
+      const badge = s.badge ? ` badge: ${s.badge.color ?? DEFAULT_BADGE_COLOR}${s.badge.svg ? '+svg' : ''}` : '';
+      return `- @${s.seat} (owner: ${s.owner}, ${s.kind}${s.role ? ', role: ' + s.role : ''}, bot: ${s.bot}${s.proxy ? ', PROXY' : ''}) can: ${s.capabilities.map(c => `${c.resource}[${c.actions.join('|')}]`).join(', ') || 'talk only'}${badge}`;
+    })
     .join('\n');
   const decisions = p.prefix.decisions.map(d => `- #${d.seq} @${d.seat}: ${d.body}`).join('\n') || '- (none yet)';
   return [

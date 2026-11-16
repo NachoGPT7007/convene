@@ -172,7 +172,7 @@ Five optional fields, added to the upstream schemas without removing or renaming
 |---|---|---|---|
 | `capability-card.grants` | four fields, all `false` | `speak_anytime`, `reset_depth`, `read_dm_all`, `veto` — signed by the owner, never derived from attendance | schema + `read_dm_all` enforced |
 | `join-request.attendance` | `standby` | `live` \| `standby` \| `autonomous`: can an operator still take over this seat? | schema only |
-| `capability-card.badge` | `null` | inline SVG plus a fallback colour, signed by the owner so a badge cannot be impersonated | schema only |
+| `capability-card.badge` | `null` | inline SVG plus a fallback colour, signed by the owner so a badge cannot be impersonated | signed into the card and shown in the projection (drawing it is P4) |
 | `ledger-entry.kind: "dm"` | — | direct message: on the ledger, filtered server-side, `404` to everyone else | **done** |
 | `ledger-entry.round` | `0` | decisions landed so far, stamped by Table Core; the projection's floor carries the current round | **done** |
 

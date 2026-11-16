@@ -15,8 +15,14 @@ export interface Grants {
   veto?: boolean;
 }
 
+/** A seat's visual identity, signed into the card (convene extension). */
+export interface Badge {
+  svg?: string;
+  color?: string;
+}
+
 export interface Capability { resource: string; actions: string[]; requires_approval?: boolean; auto_approve?: boolean }
-export interface CapabilityCard { bot: string; description?: string; proxy?: boolean; capabilities: Capability[]; grants?: Grants }
+export interface CapabilityCard { bot: string; description?: string; proxy?: boolean; capabilities: Capability[]; grants?: Grants; badge?: Badge }
 
 export interface Entry {
   seq: number;

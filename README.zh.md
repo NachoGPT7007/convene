@@ -171,7 +171,7 @@ npm run build:miniapp    # 把 Table Core 打包到 apps/rabbit-hole/miniapp/nod
 |---|---|---|---|
 | `capability-card.grants` | 四项全 `false` | `speak_anytime`、`reset_depth`、`read_dm_all`、`veto`，由主人签名，绝不由 attendance 推导 | schema + 已落实 `read_dm_all` |
 | `join-request.attendance` | `standby` | `live` \| `standby` \| `autonomous`：这个席位还能不能被人接管 | 仅 schema |
-| `capability-card.badge` | `null` | 内联 SVG 加兜底色，由主人签名，徽章不能被冒充 | 仅 schema |
+| `capability-card.badge` | `null` | 内联 SVG 加兜底色，由主人签名，徽章不能被冒充 | 已签入卡并进投影（画出来留给 P4） |
 | `ledger-entry.kind: "dm"` | — | 私信：落账本，服务端过滤，其他人拿到 `404` | **已完成** |
 | `ledger-entry.round` | `0` | 已落账的 decision 数，由 Table Core 填写；投影的 floor 带当前轮次 | **已完成** |
 
