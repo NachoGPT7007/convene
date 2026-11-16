@@ -1,6 +1,6 @@
 import {
   appendFileSync, closeSync, existsSync, fstatSync, ftruncateSync, mkdirSync, openSync,
-  readFileSync, readSync, readdirSync, truncateSync, writeFileSync, writeSync,
+  readFileSync, readSync, readdirSync, rmSync, truncateSync, writeFileSync, writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import type { Entry, TableConfig } from './protocol.js';
@@ -9,6 +9,14 @@ import type { Entry, TableConfig } from './protocol.js';
 export class JsonlStore {
   constructor(readonly dir: string) { mkdirSync(dir, { recursive: true }); }
   private p(id: string, ext: string) { return join(this.dir, `${encodeURIComponent(id)}.${ext}`); }
+  /** Delete a table's three files. The ledger is the only record, so this is not reversible. */
+  remove(id: string) {
+    for (const ext of ['config.json', 'ledger.jsonl', 'tokens.json']) {
+      const f = this.p(id, ext);
+      if (existsSync(f)) rmSync(f);
+    }
+  }
+
   saveConfig(cfg: TableConfig) { writeFileSync(this.p(cfg.id, 'config.json'), JSON.stringify(cfg, null, 2)); }
   /**
    * Appending goes through the file description, not appendFileSync: an interrupted append can

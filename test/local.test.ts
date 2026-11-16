@@ -56,6 +56,38 @@ describe('local operator interface', () => {
     expect(state.tables[0]).toMatchObject({ id: 'scan-built', topic: '两个席位一个人', status: 'open' });
   });
 
+
+  it('closes a table, then deletes it with its files', async () => {
+    const { url } = await start();
+    await fetch(url + '/local/tables', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(wizardBody),
+    });
+    const closed = await fetch(url + '/local/tables/scan-built/close', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason: 'done here' }),
+    });
+    expect(closed.status).toBe(200);
+    let state = await (await fetch(url + '/local/state')).json();
+    expect(state.tables[0].status).toBe('closed');
+
+    const removed = await fetch(url + '/local/tables/scan-built', { method: 'DELETE' });
+    expect(removed.status).toBe(200);
+    state = await (await fetch(url + '/local/state')).json();
+    expect(state.tables).toEqual([]);
+  });
+
+  it('reports the round, the entry count and who holds the floor', async () => {
+    const { url } = await start();
+    await fetch(url + '/local/tables', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(wizardBody),
+    });
+    const state = await (await fetch(url + '/local/state')).json();
+    const t = state.tables[0];
+    expect(t).toMatchObject({ id: 'scan-built', round: 0 });
+    expect(t.entries).toBeGreaterThan(0); // table_opened
+    expect(t.holder).toBeNull();          // nobody has joined yet
+    expect(typeof t.tokens).toBe('number');
+  });
+
   it('refuses the interface when a proxy forwarded the request', async () => {
     const { url } = await start();
     for (const header of ['x-forwarded-for', 'cf-connecting-ip', 'x-real-ip']) {

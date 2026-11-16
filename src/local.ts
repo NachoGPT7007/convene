@@ -3,13 +3,28 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export interface LocalTable { id: string; topic: string; status: string; seats: string[] }
+export interface LocalTable {
+  id: string; topic: string; status: string; seats: string[];
+  /** Decisions landed; the round counter the projection shows. */
+  round: number;
+  entries: number;
+  holder: string | null;
+  tokens: number;
+}
 export interface LocalOwner { id: string; publicKey: string; file: string }
 export interface LocalSeat { table: string; seat: string; token: string; file: string; url?: string }
 export interface LocalState { dataDir: string; tables: LocalTable[]; owners: LocalOwner[]; seats: LocalSeat[] }
 
 /** The bits of a live Table this scan needs, so local.ts does not import Table Core. */
-export interface LiveTableLike { cfg: { topic: string }; status: string; seats: Map<string, unknown> }
+export interface LiveTableLike {
+  cfg: { topic: string };
+  status: string;
+  seats: Map<string, unknown>;
+  roundNo: number;
+  entries: unknown[];
+  holder: string | null;
+  tokens: number;
+}
 
 const readJson = (file: string): Record<string, unknown> | null => {
   try { return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>; } catch { return null; }
@@ -29,6 +44,10 @@ export function scanLocal(dataDir: string, live: Map<string, LiveTableLike>): Lo
     topic: t.cfg.topic,
     status: t.status,
     seats: [...t.seats.keys()].sort(),
+    round: t.roundNo,
+    entries: t.entries.length,
+    holder: t.holder,
+    tokens: t.tokens,
   })).sort((a, b) => a.id.localeCompare(b.id));
 
   const owners: LocalOwner[] = [];

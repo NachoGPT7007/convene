@@ -53,11 +53,24 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
         // Creating a table needs no signature — only joining does. What it needs is everyone's public key.
         // A full TableConfig is accepted as-is; the wizard's shorter form is expanded by init here,
         // so the browser does not carry a second copy of the topology rules.
-        if (req.method === 'POST' && parts[1] === 'tables') {
+        if (req.method === 'POST' && parts[1] === 'tables' && parts.length === 2) {
           const body = (await readBody(req)) as Record<string, unknown> & { topology?: unknown };
           const cfg = body.topology ? body : buildTableConfig(body as never);
           const { table, admin_token } = host.create(cfg as never);
           return json(res, 201, { table: table.cfg.id, admin_token });
+        }
+        // POST /local/tables/<id>/close and DELETE /local/tables/<id>: the operator's two levers.
+        if (parts[1] === 'tables' && parts[2]) {
+          const id = parts[2];
+          if (req.method === 'POST' && parts[3] === 'close') {
+            const body = (await readBody(req)) as { reason?: string };
+            host.get(id).close(String(body.reason ?? 'closed from the table list'));
+            return json(res, 200, { ok: true, table: id, status: 'closed' });
+          }
+          if (req.method === 'DELETE' && parts.length === 3) {
+            host.remove(id);
+            return json(res, 200, { ok: true, removed: id });
+          }
         }
         return json(res, 404, { error: { code: 'E_NOT_FOUND', message: `${req.method} ${url.pathname}` } });
       }

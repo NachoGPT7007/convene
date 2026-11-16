@@ -190,6 +190,20 @@
   .scan-title { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
   .scan-item { display: block; width: 100%; text-align: left; margin-bottom: 5px; font-size: 12px; }
   .scan-owner { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); padding: 1px 0; }
+
+  /* 桌管理 */
+  #desks { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(6px);
+    overflow: auto; padding: 24px 0; }
+  #desks[hidden] { display: none; }
+  .desk { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel-2); }
+  .desk-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .desk-meta { color: var(--muted); font-size: 12px; }
+  .desk-head .ops { margin-left: auto; display: flex; gap: 6px; }
+  .members { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .member { display: grid; grid-template-columns: 104px repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; }
+  .member .mono { color: var(--fg); }
+  .desk-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -203,6 +217,7 @@
   <span class="spacer"></span>
   <span class="pill"><span class="dot" id="dot"></span><span id="link">未连接</span></span>
   <button id="btnInbox" title="收件箱">私信</button>
+  <button id="btnDesks" title="本机的桌子与成员">桌子</button>
   <button id="btnNew" title="开一张新桌子">开桌</button>
   <button id="btnTheme" title="切换主题">主题</button>
   <button id="btnSetup">设置</button>
@@ -242,6 +257,15 @@
   <button class="send" id="btnSend" type="button">发送</button>
   <p id="sendHint">发言需要持有发言权；私信不用。</p>
 </section>
+
+<div id="desks" hidden>
+  <div class="card" style="width:min(780px,calc(100vw - 32px))">
+    <h2>本机的桌子</h2>
+    <p>关一张桌＝结束讨论平面（读取与收尾仍可用）；删一张桌＝连账本一起删除，不能恢复。</p>
+    <div id="deskList"></div>
+    <div class="row"><button id="deskClose" type="button">关闭面板</button></div>
+  </div>
+</div>
 
 <div id="newTable" hidden>
   <div class="card" style="width:min(640px,calc(100vw - 32px))">
@@ -904,6 +928,115 @@
     } catch { $('ntCopy').textContent = '复制失败，手动选中'; }
   });
 
+
+
+  // ---- 桌管理：本机有哪些桌、谁在里面 ------------------------------------
+  async function projectionOf(table, token) {
+    const res = await fetch(`/v0.1/tables/${encodeURIComponent(table)}/projection?since=0`, {
+      headers: { authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  async function closeTableById(id) {
+    const res = await fetch(`/local/tables/${encodeURIComponent(id)}/close`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'closed from the table list' }),
+    });
+    if (!res.ok) throw new Error('关闭失败：HTTP ' + res.status);
+  }
+
+  async function removeTableById(id) {
+    const res = await fetch(`/local/tables/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('删除失败：HTTP ' + res.status);
+  }
+
+  function memberRow(s) {
+    const row = el('div', 'member');
+    row.appendChild(el('span', 'mono', '@' + s.seat));
+    const rt = s.runtime || {};
+    row.appendChild(el('span', '', '人类 ' + s.owner));
+    row.appendChild(el('span', '', 'agent ' + (rt.agent || s.bot || '?')));
+    row.appendChild(el('span', '', '系统 ' + (rt.os || s.transport || '?')));
+    const g = s.grants || {};
+    const on = ['speak_anytime', 'reset_depth', 'read_dm_all', 'veto'].filter(k => g[k] === true);
+    row.appendChild(el('span', '', '权限 ' + (on.length ? on.join(' · ') : '无')));
+    return row;
+  }
+
+  async function deskCard(t, seat) {
+    const art = el('article', 'desk');
+    const head = el('div', 'desk-head');
+    head.appendChild(el('b', '', t.id));
+    head.appendChild(el('span', 'tag' + (t.status === 'open' ? ' human' : ''), t.status === 'open' ? '进行中' : '已关闭'));
+    head.appendChild(el('span', 'desk-meta',
+      `${t.seats.length} 席 · 第 ${t.round + 1} 轮 · ${t.entries} 条 · 发言权 ${t.holder ? '@' + t.holder : '空'} · ${t.tokens} tok`));
+
+    const ops = el('div', 'ops');
+    if (seat) {
+      const b = el('button', '', '进入');
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        $('fTable').value = t.id;
+        $('fToken').value = seat.token;
+        $('fSeat').value = seat.seat;
+        $('desks').hidden = true;
+        connect();
+      });
+      ops.appendChild(b);
+    }
+    if (t.status === 'open') {
+      const b = el('button', '', '关闭');
+      b.type = 'button';
+      b.addEventListener('click', async () => {
+        if (!confirm(`关闭 ${t.id}？讨论平面会结束，读取和任务收尾仍然可用。`)) return;
+        try { await closeTableById(t.id); await renderDesks(); } catch (e) { alert(e.message); }
+      });
+      ops.appendChild(b);
+    }
+    const del = el('button', '', '删除');
+    del.type = 'button';
+    del.addEventListener('click', async () => {
+      if (!confirm(`删除 ${t.id}？账本会一起删掉，无法恢复。`)) return;
+      try { await removeTableById(t.id); await renderDesks(); } catch (e) { alert(e.message); }
+    });
+    ops.appendChild(del);
+    head.appendChild(ops);
+    art.appendChild(head);
+
+    if (!seat) {
+      art.appendChild(el('div', 'desk-note', '本机没有这张表的席位，看不到成员。入座后才能看。'));
+      return art;
+    }
+    try {
+      const p = await projectionOf(t.id, seat.token);
+      const list = el('div', 'members');
+      for (const s of p.prefix.seats || []) list.appendChild(memberRow(s));
+      art.appendChild(list);
+    } catch (err) {
+      art.appendChild(el('div', 'desk-note', '成员读取失败：' + err.message));
+    }
+    return art;
+  }
+
+  async function renderDesks() {
+    const box = $('deskList');
+    box.replaceChildren(el('div', 'empty', '正在扫描本机…'));
+    try {
+      const j = await fetchLocalState();
+      const byTable = new Map();
+      for (const s of j.seats) if (!byTable.has(s.table)) byTable.set(s.table, s);
+      box.replaceChildren();
+      if (!j.tables.length) { box.appendChild(el('div', 'empty', '本机还没有桌子，去「开桌」建一张')); return; }
+      for (const t of j.tables) box.appendChild(await deskCard(t, byTable.get(t.id)));
+    } catch (err) {
+      box.replaceChildren(el('div', 'err', err.message || String(err)));
+    }
+  }
+
+  $('btnDesks').addEventListener('click', () => { $('desks').hidden = false; renderDesks(); });
+  $('deskClose').addEventListener('click', () => { $('desks').hidden = true; });
 
   // ---- 扫描本机：桌子 / 席位 / owner 公钥 ---------------------------------
   let localOwners = new Map();

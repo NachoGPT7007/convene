@@ -59,6 +59,14 @@ export class TableHost {
     });
   }
 
+  /** Drop a table from memory and delete its files. The ledger is gone afterwards: no undo. */
+  remove(id: string) {
+    if (!this.tables.has(id)) throw new ByobError('E_NOT_FOUND', `table ${id}`);
+    this.tables.delete(id);
+    this.tokens.delete(id);
+    this.store?.remove(id);
+  }
+
   get(id: string): Table {
     const t = this.tables.get(id);
     if (!t) throw new ByobError('E_NOT_FOUND', `table ${id}`);

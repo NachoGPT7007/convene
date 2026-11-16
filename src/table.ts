@@ -400,6 +400,8 @@ export class Table extends EventEmitter {
       // bot is the agent, transport is the channel it joined over.
       transport: s.transport ?? null,
       runtime: s.card.runtime ?? null,
+      // The privileges the owner signed. Without this the dashboard showed "权限 无" for everyone.
+      grants: s.card.grants ?? null,
       capabilities: s.card.capabilities,
       // Signed into the card, so it cannot be set by a client that is not the owner (convene).
       badge: s.card.badge ?? null,
