@@ -3,6 +3,7 @@
 // The wire protocol is still byob/0.1; `byob` stays available as an alias so upstream docs keep working.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { TableHost } from './host.js';
 import { JsonlStore } from './store.js';
 import { createTableServer } from './server.js';
@@ -62,6 +63,7 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene say --seat seat.json <text> [--to @x]
   convene dm --seat seat.json --to @x <text>         direct message: ledger entry, private to the recipient
   convene dm inbox --seat seat.json [--keep-unread]  read your direct messages, grouped by seat
+  convene ui --seat seat.json [--open]               print a one-click link to the dashboard
   convene pass --seat seat.json [text]
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
@@ -132,6 +134,22 @@ async function run() {
     case 'propose': return console.log(JSON.stringify(await seatFrom(flags.seat).propose(pos.join(' '), JSON.parse(flags.effects))));
     case 'approve': return console.log(JSON.stringify(await loadOwner(flags.owner).decide(url, pos[0], pos[1], flags.reject ? 'reject' : 'approve', flags.reason)));
     case 'mcp': { const { main } = await import('./mcp.js'); return main(); }
+    case 'ui': {
+      if (!flags.seat) throw new Error('ui requires --seat seat.json: the link carries that seat\'s token');
+      const s = JSON.parse(readFileSync(flags.seat, 'utf8')) as { url?: string; table: string; seat: string; token: string };
+      const base = (flags.url ?? s.url ?? url).replace(/\/+$/, '');
+      const fragment = new URLSearchParams({ t: s.token, table: s.table, seat: s.seat }).toString();
+      const link = `${base}/#${fragment}`;
+      console.log(link);
+      console.log('');
+      console.log('这条链接带着该席位的 token，只发给该看这张桌子的人。');
+      console.log('token 放在 # 片段里：不会发到服务器，也不进访问日志；页面读到后会从地址栏抹掉。');
+      if (flags.open) {
+        const r = spawnSync('xdg-open', [link], { stdio: 'ignore' });
+        console.log(r.error ? '打不开浏览器？把上面那行复制进去。' : '已在默认浏览器里打开。');
+      }
+      return;
+    }
     case 'doctor': {
       const port = Number(flags.port ?? 7341);
       const dataDir = flags.data ?? './data';

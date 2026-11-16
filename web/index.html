@@ -163,8 +163,8 @@
     <p>看板只读取投影，不发任何消息。token 只存在这个浏览器里。</p>
     <label for="fTable">表 id</label>
     <input id="fTable" placeholder="main" autocomplete="off">
-    <label for="fToken">席位 token（<code>*.seat.json</code> 里的 <code>token</code>）</label>
-    <input id="fToken" type="password" placeholder="粘贴 seat token" autocomplete="off">
+    <label for="fToken">席位 token（也可以直接粘贴整个 seat 文件）</label>
+    <input id="fToken" type="password" placeholder="粘贴 token，或 *.seat.json 的全部内容" autocomplete="off">
     <label for="fSeat">你的席位（可选，用于高亮自己的发言）</label>
     <input id="fSeat" placeholder="alice" autocomplete="off">
     <div class="err" id="setupErr"></div>
@@ -173,9 +173,18 @@
       <button id="btnConnect" style="background:var(--accent); border-color:var(--accent); color:#fff">连接</button>
     </div>
     <div class="hint">
-      找不到 token？在宿主那台机器上跑
-      <code>cat ~/convene-data/seats/alice.seat.json</code>。
-      页面走相对路径 <code>/v0.1</code>，放在反代后面也能直接用。
+      <b>第一次用？最简单的方式</b><br>
+      在跑桌子的那台机器上执行 <code>convene ui --seat seats/alice.seat.json</code>，
+      它会打印一条链接。点开就直接进来，不用填任何东西。
+      <br><br>
+      已经有一条链接：直接打开即可。<br>
+      手上有 <code>alice.seat.json</code>：把<b>整个文件内容</b>粘到上面，会自动识出 token、表和席位。<br>
+      只想知道自己是谁：<code>cat ~/convene-data/seats/alice.seat.json</code>，复制里面的 <code>token</code>。
+      <br><br>
+      还没有席位？在宿主上依次执行：<br>
+      <code>convene keygen alice --out alice.owner.json</code><br>
+      <code>convene create table.json</code>（打印 admin token）<br>
+      <code>convene join main --owner alice.owner.json --seat alice --out alice.seat.json</code>
     </div>
   </div>
 </div>
@@ -196,6 +205,22 @@
     const params = new URLSearchParams(location.search);
     // ?reset=1 forgets the saved seat so a different token can be entered cleanly.
     if (params.has('reset')) { try { localStorage.removeItem(SKEY); } catch {} }
+
+    // `convene ui` prints a link with the token in the fragment: fragments never reach the
+    // server or its access logs, and the link is wiped from the address bar right after reading.
+    const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const fromHash = hash.get('t') || hash.get('token');
+    if (fromHash) {
+      const picked = {
+        table: hash.get('table') || params.get('table') || 'main',
+        token: fromHash,
+        seat: hash.get('seat') || params.get('seat') || '',
+      };
+      history.replaceState(null, '', location.pathname + location.search);
+      cfg = picked;
+      return;
+    }
+
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { saved = {}; }
     cfg = {
@@ -203,6 +228,20 @@
       token: params.has('reset') ? '' : (saved.token || ''),
       seat: params.get('seat') || saved.seat || '',
     };
+  }
+
+  /** Accept a bare token, or the whole seat file pasted straight from the host. */
+  function parseTokenInput(raw) {
+    const text = String(raw || '').trim();
+    if (text.startsWith('{')) {
+      try {
+        const j = JSON.parse(text);
+        if (j && typeof j.token === 'string') {
+          return { token: j.token, table: typeof j.table === 'string' ? j.table : '', seat: typeof j.seat === 'string' ? j.seat : '' };
+        }
+      } catch {}
+    }
+    return { token: text, table: '', seat: '' };
   }
   function saveCfg() {
     try { localStorage.setItem(SKEY, JSON.stringify(cfg)); } catch {}
@@ -422,9 +461,10 @@
 
   async function connect() {
     $('setupErr').textContent = '';
-    cfg.table = $('fTable').value.trim();
-    cfg.token = $('fToken').value.trim();
-    cfg.seat = $('fSeat').value.trim();
+    const parsed = parseTokenInput($('fToken').value);
+    cfg.table = ($('fTable').value.trim() || parsed.table || '').trim();
+    cfg.token = parsed.token;
+    cfg.seat = ($('fSeat').value.trim() || parsed.seat || '').trim();
     if (!cfg.table || !cfg.token) { $('setupErr').textContent = '表 id 和 token 都要填'; return; }
     try {
       await refresh();
