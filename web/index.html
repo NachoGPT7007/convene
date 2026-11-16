@@ -179,7 +179,7 @@
     padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
   .modes label:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
   .modes small { grid-column: 2; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
-  .seatrow { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
+  .seatrow { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
   .seatrow input { font-size: 12.5px; padding: 6px 8px; }
   .seatrow .del { padding: 2px 9px; }
   pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px;
@@ -264,7 +264,8 @@
     <label for="ntTopic">主题</label>
     <input id="ntTopic" placeholder="这次要一起做什么" autocomplete="off">
 
-    <label>席位（人类 ID / 席位名 / agent）</label>
+    <label>席位（人类 ID / 席位名）</label>
+    <div class="hint" style="margin:0 0 6px">agent 与系统在席位入座时自动探测，不用填。</div>
     <div id="ntSeats"></div>
     <button id="ntAdd" type="button" style="margin-bottom:6px">+ 再加一席</button>
     <div class="hint">
@@ -571,10 +572,13 @@
       right.appendChild(name);
       const meta = el('div', 'meta');
       // 四层身份：人类（principal）→ agent → 系统/席位 → 权限
+      const rt = s.runtime || {};
       meta.appendChild(el('span', 'tag', '人类 ' + s.owner));
-      if (s.bot) meta.appendChild(el('span', 'tag', 'agent ' + s.bot));
+      const agentName = rt.agent || s.bot;
+      if (agentName) meta.appendChild(el('span', 'tag', 'agent ' + agentName));
       meta.appendChild(el('span', 'tag' + (s.kind === 'human' ? ' human' : ''), s.kind === 'human' ? '人类席位' : '机器席位'));
-      if (s.transport) meta.appendChild(el('span', 'tag', '系统 ' + s.transport));
+      const sys = rt.os || s.transport;
+      if (sys) meta.appendChild(el('span', 'tag', '系统 ' + sys));
       if (s.role) meta.appendChild(el('span', 'tag', s.role));
       if (s.proxy) meta.appendChild(el('span', 'tag grant', 'PROXY'));
       const g = s.grants || {};
@@ -830,11 +834,10 @@
     };
     const h = mk('人类ID（nacho）', human);
     const s2 = mk('席位名（nacho.wsl）', seat);
-    const a = mk('agent（dsh）', agent);
     const del = el('button', 'del', '×');
     del.type = 'button';
     del.addEventListener('click', () => row.remove());
-    row.append(h, s2, a, del);
+    row.append(h, s2, del);
     return row;
   }
 

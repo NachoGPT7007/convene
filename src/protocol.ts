@@ -15,6 +15,13 @@ export interface Grants {
   veto?: boolean;
 }
 
+/** Where a seat actually ran, detected by the client and signed into the card (convene extension). */
+export interface SeatRuntime {
+  os?: string;
+  host?: string;
+  agent?: string;
+}
+
 /** A seat's visual identity, signed into the card (convene extension). */
 export interface Badge {
   svg?: string;
@@ -22,7 +29,7 @@ export interface Badge {
 }
 
 export interface Capability { resource: string; actions: string[]; requires_approval?: boolean; auto_approve?: boolean }
-export interface CapabilityCard { bot: string; description?: string; proxy?: boolean; capabilities: Capability[]; grants?: Grants; badge?: Badge }
+export interface CapabilityCard { bot: string; description?: string; proxy?: boolean; capabilities: Capability[]; grants?: Grants; badge?: Badge; runtime?: SeatRuntime }
 
 export interface Entry {
   seq: number;

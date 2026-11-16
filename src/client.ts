@@ -1,6 +1,7 @@
 // @byob/seat — client SDK for sitting at a BYOB table over HTTP + SSE.
 import { PROTOCOL, ByobError, type Badge, type CapabilityCard, type Entry, type PostRequest, type Projection, type Task, type Effect, type ErrorCode } from './protocol.js';
 import { generateOwnerKeys, nonce, signPayload, type OwnerKeys } from './crypto.js';
+import { detectRuntime } from './runtime.js';
 
 /** An owner holds the private key. It signs seat joins and approvals; bots never hold other owners' keys. */
 export class Owner {
@@ -42,7 +43,9 @@ export class SeatClient {
   constructor(readonly baseUrl: string, readonly table: string, readonly seat: string, readonly token: string, readonly disclosure: Disclosure = {}) {}
 
   static async join(baseUrl: string, table: string, owner: Owner, j: { seat: string; kind?: 'bot' | 'human'; role?: string; card: CapabilityCard; disclosure?: Disclosure }) {
-    const req = owner.signJoin(table, { seat: j.seat, kind: j.kind ?? 'bot', role: j.role, card: j.card });
+    // Detected here, signed by the owner below: the table learns what this seat really runs on.
+    const card: CapabilityCard = { ...j.card, runtime: j.card.runtime ?? detectRuntime(j.card.bot || 'convene-cli') };
+    const req = owner.signJoin(table, { seat: j.seat, kind: j.kind ?? 'bot', role: j.role, card });
     const r = await call<{ seat_token: string }>(baseUrl, `/v0.1/tables/${enc(table)}/seats`, 'POST', undefined, req);
     return new SeatClient(baseUrl, table, j.seat, r.seat_token, j.disclosure);
   }

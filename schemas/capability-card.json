@@ -20,6 +20,16 @@
         "veto": { "type": "boolean", "description": "May block one round. Audited in the ledger." }
       }
     },
+    "runtime": {
+      "type": "object",
+      "description": "Extension (convene): what the seat actually ran on when it joined. Filled by the client from the machine itself, before the owner signs, so it cannot be typed in as a nicer answer.",
+      "additionalProperties": false,
+      "properties": {
+        "os": { "type": "string", "maxLength": 120, "description": "Distribution label, e.g. Ubuntu 24.04.1 LTS（WSL）." },
+        "host": { "type": "string", "maxLength": 120 },
+        "agent": { "type": "string", "maxLength": 80, "description": "The agent implementation that opened this seat, e.g. dsh." }
+      }
+    },
     "badge": {
       "type": "object",
       "description": "Extension (convene): the seat's visual identity. It lives in the card, not in a display layer, so the owner signs it and a client cannot impersonate it. Changing a badge means re-joining — a change of identity should cost one signature. Renderers must sanitize `svg` before mounting it; `color` is the fallback when `svg` is absent.",

@@ -399,6 +399,7 @@ export class Table extends EventEmitter {
       // Who is behind this seat, what runs it, and how it got here: owner is the human principal,
       // bot is the agent, transport is the channel it joined over.
       transport: s.transport ?? null,
+      runtime: s.card.runtime ?? null,
       capabilities: s.card.capabilities,
       // Signed into the card, so it cannot be set by a client that is not the owner (convene).
       badge: s.card.badge ?? null,
