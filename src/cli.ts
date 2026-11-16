@@ -12,13 +12,20 @@ import { Owner, SeatClient, createTable, renderPrefix, renderTail } from './clie
 import { collectDms, formatInbox } from './inbox.js';
 import { runChecks, renderChecks, checkSchemas, tailnetAddresses, portIsFree, gitPinnedDirectForGithub, dataDirWritable, proxyFromEnv, noProxyFromEnv, checkGithub, probeGithub, checkEndpoint, probeEndpoint } from './doctor.js';
 import { serviceUnit, installService, uninstallService, serviceStatus, unitPath, unitName, defaultServeExec, repoRootFromModule, type ServiceOptions } from './service.js';
+import { buildTableConfig, parseSeatSpec } from './init.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flags: Record<string, string> = {};
+/** A flag given more than once keeps every value here (`--seat a:x --seat b:y`). */
+const multi: Record<string, string[]> = {};
 const pos: string[] = [];
 for (let i = 0; i < rest.length; i++) {
-  if (rest[i].startsWith('--')) flags[rest[i].slice(2)] = rest[i + 1]?.startsWith('--') || rest[i + 1] === undefined ? 'true' : rest[++i];
-  else pos.push(rest[i]);
+  if (rest[i].startsWith('--')) {
+    const key = rest[i].slice(2);
+    const value = rest[i + 1]?.startsWith('--') || rest[i + 1] === undefined ? 'true' : rest[++i];
+    flags[key] = value;
+    (multi[key] ??= []).push(value);
+  } else pos.push(rest[i]);
 }
 const url = flags.url ?? process.env.BYOB_URL ?? 'http://127.0.0.1:7341';
 const loadOwner = (f: string) => { const k = JSON.parse(readFileSync(f, 'utf8')); return new Owner(k.id, { publicKey: k.publicKey, privateKey: k.privateKey }); };
@@ -57,6 +64,8 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
 
   convene serve [--port 7341] [--host 127.0.0.1] [--data ./data]
   convene keygen <owner-id> --out owner.json         Ed25519 owner key (keep private)
+  convene init --id main --topic "..." --seat alice:alice.owner.json --seat bob:bob.owner.json [--rounds 3] [--budget 200000] [--out table.json]
+                                                     build a table config from owner key files
   convene create <table-config.json>                 prints admin token
   convene join <table> --owner owner.json --seat <id> [--role r] [--bot name] [--card card.json] [--human] --out seat.json
   convene read --seat seat.json [--since N]          projection (prefix + tail)
@@ -111,6 +120,35 @@ async function run() {
       const out = flags.out ?? `${pos[0]}.owner.json`;
       writeFileSync(out, JSON.stringify({ id: pos[0], ...k }, null, 2), { mode: 0o600 });
       console.log(`wrote ${out}; public key: ${k.publicKey}`);
+      return;
+    }
+    case 'init': {
+      const specs = multi.seat ?? [];
+      if (!specs.length) throw new Error('init needs at least one --seat <name>:<owner key file>');
+      const seats = specs.map(raw => {
+        const { seat, keyFile } = parseSeatSpec(raw);
+        const k = JSON.parse(readFileSync(keyFile, 'utf8')) as { id?: string; publicKey?: string };
+        if (!k.publicKey || !k.id) throw new Error(`${keyFile}: not an owner key file (needs id and publicKey)`);
+        return { seat, owner: k.id, publicKey: k.publicKey };
+      });
+      const cfg = buildTableConfig({
+        id: flags.id ?? pos[0] ?? 'main',
+        topic: flags.topic ?? 'a convene table',
+        seats,
+        rounds: flags.rounds ? Number(flags.rounds) : undefined,
+        decisionBy: flags['decision-by'],
+        budgetTokens: flags.budget ? Number(flags.budget) : undefined,
+        maxBotDepth: flags['max-bot-depth'] ? Number(flags['max-bot-depth']) : undefined,
+        maxChars: flags['max-chars'] ? Number(flags['max-chars']) : undefined,
+      });
+      const json = JSON.stringify(cfg, null, 2) + '\n';
+      if (flags.out) {
+        writeFileSync(flags.out, json);
+        console.log(`wrote ${flags.out} — ${seats.length} seat(s), ${Object.keys(cfg.owners).length} owner(s)`);
+        console.log(`next: convene create ${flags.out} --url <host>, then each seat runs convene join`);
+      } else {
+        console.log(json.trimEnd());
+      }
       return;
     }
     case 'create': return console.log(JSON.stringify(await createTable(url, JSON.parse(readFileSync(pos[0], 'utf8')))));
