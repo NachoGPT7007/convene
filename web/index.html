@@ -326,6 +326,9 @@
       <button id="btnCancel">取消</button>
       <button id="btnConnect" style="background:var(--accent); border-color:var(--accent); color:#fff">连接</button>
     </div>
+    <div class="row">
+      <button id="btnForget" type="button">忘记这台浏览器里保存的凭证</button>
+    </div>
     <button id="btnScan" type="button" style="width:100%">发现本机：桌子 / 席位 / 密钥</button>
     <div id="scanResult"></div>
 
@@ -818,6 +821,7 @@
     try {
       await refresh();
       saveCfg();
+      rememberSeat(cfg.table, cfg.seat);
       $('setup').hidden = true;
       listen();
     } catch (err) {
@@ -826,6 +830,7 @@
   }
 
   $('btnConnect').addEventListener('click', connect);
+  $('btnForget').addEventListener('click', forgetEverything);
   $('btnSay').addEventListener('click', () => setMode('say'));
   $('btnDm').addEventListener('click', () => setMode('dm'));
   $('btnSend').addEventListener('click', send);
@@ -1080,6 +1085,7 @@
           $('fTable').value = st.table;
           $('fToken').value = st.token;
           $('fSeat').value = st.seat;
+          rememberSeat(st.table, st.seat);
           connect();
         });
         blk.appendChild(b);
@@ -1180,13 +1186,67 @@
   $('btnTheme').addEventListener('click', cycleTheme);
   try { applyTheme(localStorage.getItem(THEME_KEY) || 'auto'); } catch { applyTheme('auto'); }
 
+
+  // ---- 免登录：本机能扫到席位就直接进，公网仍需凭证 ------------------------
+  const PREFER_KEY = 'convene.prefer';
+
+  const seatsKey = (t, seat) => `${t}/${seat}`;
+
+  function rememberSeat(table, seat) {
+    try { localStorage.setItem(PREFER_KEY, seatsKey(table, seat)); } catch {}
+  }
+
+  function preferredSeat() {
+    try { return localStorage.getItem(PREFER_KEY) || ''; } catch { return ''; }
+  }
+
+  /**
+   * Loopback only: /local/state answers with this machine's seat tokens, so the browser on this
+   * machine can reconnect without being handed a link. Through a proxy that endpoint is 404 and
+   * this returns false, leaving the one-click link as the way in.
+   */
+  async function autoLogin() {
+    let state;
+    try { state = await fetchLocalState(); } catch { return false; }
+    const seats = (state.seats || []).filter(s => s.table && s.seat && s.token);
+    if (!seats.length) return false;
+
+    const want = preferredSeat();
+    const pick = seats.find(s => seatsKey(s.table, s.seat) === want)
+      || (seats.length === 1 ? seats[0] : null);
+    if (!pick) return false; // several seats and no memory: let the person choose
+
+    cfg = { table: pick.table, token: pick.token, seat: pick.seat };
+    try {
+      await refresh();
+      saveCfg();
+      rememberSeat(pick.table, pick.seat);
+      listen();
+      return true;
+    } catch { return false; }
+  }
+
+  function forgetEverything() {
+    try {
+      localStorage.removeItem(SKEY);
+      localStorage.removeItem(PREFER_KEY);
+    } catch {}
+    location.href = location.pathname;
+  }
+
   // ---- boot ---------------------------------------------------------------
   loadCfg();
-  if (cfg.table && cfg.token) {
-    refresh().then(() => listen()).catch((err) => showSetup(err.code === 'E_UNAUTHORIZED' ? 'token 无效或已过期' : err.message));
-  } else {
+  (async () => {
+    if (cfg.table && cfg.token) {
+      try { await refresh(); listen(); return; }
+      catch (err) {
+        // A stale token should not send us straight to a form when this machine can just re-issue.
+        if (err.code !== 'E_UNAUTHORIZED') { showSetup(err.message); return; }
+      }
+    }
+    if (await autoLogin()) return;
     showSetup('');
-  }
+  })();
 })();
 </script>
 </body>
