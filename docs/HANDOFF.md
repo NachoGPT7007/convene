@@ -90,6 +90,7 @@ convene doctor --url http://127.0.0.1:7341
 | 席位只绑 `127.0.0.1`，tailnet 连不到 | 绑 `0.0.0.0`；`/local/*` 对外仍 404 |
 | 以为 webhook 推送就是保证 | 推送是**尽力而为**：超时/重试后放弃，daemon 停机就丢。保证在 spool + 重启补拉（`projection?since=cursor`），推送只负责「2 秒内」。别把可靠性押在 POST 成功上 |
 | seat token 写进 systemd `ExecStart` | `/proc` 里全机器可读。token 只进 `envfile`（0600），unit 用 `EnvironmentFile=` |
+| 想给远程人加一条公网 admit 接口 | 不做：远程走 SSH，进来就是本机。多一条远程入口就多一套 TLS/认证/审计面，SSH 已经做完了 |
 
 ## 新会话开场白（可直接粘贴）
 

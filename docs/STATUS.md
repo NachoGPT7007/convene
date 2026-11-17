@@ -95,6 +95,7 @@
 - 引入 Matrix —— AS 是 passive，阻止不了事件，真 floor 做不了；
 - Codync 的 P2P 网络 —— 本机 TUN 下会退回 relay，已有 Tailscale 够用；
 - 改 `SPEC.md` —— 那是上游原文。扩展以 `schemas/` 与代码为准，上游接受后再补规范；
+- **远程确认接口**（公网 admit / 审批入口）—— 远程操作走 SSH，进来就是本机，`/local` 自然可用；不为远程再开一条 TLS + 认证 + 审计的面；
 - 适配上游的 Rabbit Hole miniapp **当唯一前端** —— 它是 MiniMax Code 的 mini app：`start(context)` 要宿主注入 `dataDir/pluginRoot/signal/agent`，UI 走 `/api/*` 和它自己的 `service.mjs`（与本仓 `src/` 平行的第二套应用层），本机没装宿主。**不**代表它不可借鉴：`client/`（1486 行，MIT）可以 fork 出来接 `/v0.1`，代价是补 `dm`/`join_*`/`seat_removed` 渲染、去掉宿主桥、移植本机免登录与桌管理。当前选择是 `web/`，是否迁移待定，见 HANDOFF。
 
 ---
