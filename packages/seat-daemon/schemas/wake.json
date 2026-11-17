@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://byob.dev/schemas/v0.1/wake.json",
+  "title": "Seat wake-up (webhook push)",
+  "description": "What the table host POSTs to a seat's daemon when something on the ledger needs that seat. The daemon spools it and never writes back to the ledger: Table Core stays the only writer. The shape follows A2A push notifications: one POST per event, the receiver acknowledges with 2xx, and a body that does not parse is refused.",
+  "type": "object",
+  "required": ["protocol", "table", "seat", "cursor", "wakes", "entry", "at"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "const": "byob/0.1" },
+    "table": { "$ref": "common.json#/$defs/id" },
+    "seat": { "$ref": "common.json#/$defs/id" },
+    "subscription": { "type": "string", "description": "The id the host returned when this seat registered. Lets a receiver deduplicate a retried delivery." },
+    "cursor": { "type": "integer", "minimum": 1, "description": "Ledger seq this wake is about. A seat that has already acked it can drop it silently." },
+    "wakes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["floor", "task", "dm", "mention"] },
+      "description": "Why this seat is being told. The same entry can carry more than one reason."
+    },
+    "entry": {
+      "type": "object",
+      "description": "The ledger entry as this seat may see it. Content is never widened: a direct message reaches only its recipients.",
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "kind": { "type": "string" },
+        "event": { "type": "string" },
+        "seat": { "type": "string" },
+        "to": { "type": "array", "items": { "type": "string" } },
+        "task": { "type": "string" },
+        "state": { "type": "string" },
+        "floor": { "type": "object", "properties": { "holder": { "type": ["string", "null"] }, "grant_seq": { "type": ["integer", "null"] }, "round": { "type": "integer" } } },
+        "status": { "type": "string" }
+      }
+    },
+    "at": { "type": "string", "description": "Wall clock, audit only." }
+  }
+}

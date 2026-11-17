@@ -106,6 +106,13 @@ const usage = `convene — BYOB Table Protocol v0.1 CLI (fork of the upstream re
   convene propose --seat seat.json <text> --effects '[{"owner":..,"resource":..,"action":..}]'
   convene approve <table> <task> --owner owner.json [--reject] [--reason text]
   convene mcp                                        MCP stdio bridge (env BYOB_URL, BYOB_TABLE, BYOB_OWNER_KEY_FILE)
+  convene daemon serve --table <t> --seat <s> --token <seat token> [--url http://127.0.0.1:7341] [--listen 127.0.0.1:7342] [--spool dir] [--wake-token secret] [--advertise host:port] [--no-register]
+                                                     long-lived wake-up receiver: the table pushes, the daemon spools
+  convene daemon mcp [--spool dir]                   stdio MCP the agent calls (seat_wait / seat_inbox / seat_ack / seat_status)
+  convene daemon status [--spool dir] [--listen host:port]
+                                                     spool size, cursor, whether a receiver holds the port
+  convene daemon register --table <t> --seat <s> --token <token> [--url base] [--advertise host:port]
+                                                     register the subscription without starting a receiver
   convene doctor [--port 7341] [--data ./data] [--url base] [--github]
                                                      read-only checks; --github measures both roads,
                                                      --url verifies a host (directly or via a proxy)
@@ -217,6 +224,7 @@ async function run() {
     case 'propose': return console.log(JSON.stringify(await seatFrom(flags.seat).propose(pos.join(' '), JSON.parse(flags.effects))));
     case 'approve': return console.log(JSON.stringify(await loadOwner(flags.owner).decide(url, pos[0], pos[1], flags.reject ? 'reject' : 'approve', flags.reason)));
     case 'mcp': { const { main } = await import('./mcp.js'); return main(); }
+    case 'daemon': { const { runDaemon } = await import('../packages/seat-daemon/src/cli.js'); return runDaemon(pos[0], flags); }
     case 'request-join': {
       const table = pos[0];
       if (!table) throw new Error('request-join <table> --owner owner.json --seat <name>');

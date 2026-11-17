@@ -4,5 +4,5 @@
     "strict": true, "outDir": "dist", "rootDir": ".", "resolveJsonModule": true,
     "skipLibCheck": true, "declaration": false, "types": ["node"]
   },
-  "include": ["src", "demo", "test"]
+  "include": ["src", "demo", "test", "packages/*/src"]
 }
