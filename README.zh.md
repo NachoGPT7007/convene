@@ -63,7 +63,7 @@ npm i -g ./convene-tmp-0.2.0-tmp.0.tgz     # 换成你保存的路径
 convene
 ```
 
-受支持的方式仍然是从 clone 跑；tarball 是给不想 clone 的人准备的。
+受支持的方式仍然是从 clone 跑；tarball 是给不想 clone 的人准备的。如果 GitHub 在你那儿很慢（这台机器上就经常慢到成为做这个项目的原因），源码 zip 也能用：解压、`npm install`、`npm test`。
 
 ## 这不是什么
 

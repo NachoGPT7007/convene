@@ -78,7 +78,8 @@ convene
 ```
 
 Running from a clone (above) is the supported path; the tarball is for people who would rather not
-clone.
+clone. If GitHub is slow where you are (it is, here, often enough to be the reason this project
+exists), a source zip works the same way: unzip, `npm install`, `npm test`.
 
 ## What this is not
 
