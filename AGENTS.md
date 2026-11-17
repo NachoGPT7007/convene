@@ -68,7 +68,7 @@
 ```bash
 cd ~/convene-construction/mcode-agent-table
 npx tsc -p . --noEmit
-npm test                    # 当前 130 条，上游 73 条必须全绿
+npm test                    # 当前 139 条，上游 73 条必须全绿
 convene doctor --url http://127.0.0.1:7341
 curl -s http://127.0.0.1:7341/v0.1   # {"protocol":"byob/0.1","tables":N}
 ```
