@@ -85,6 +85,7 @@ curl -s http://127.0.0.1:7341/v0.1   # {"protocol":"byob/0.1","tables":N}
 
 | 什么时候 | 读什么 |
 |---|---|
+| 刚接手 / 换会话 | [`docs/HANDOFF.md`](docs/HANDOFF.md)（一屏读完的运行现状、已定决策、坑） |
 | 现在做到哪了、下一步做什么 | [`docs/STATUS.md`](docs/STATUS.md) |
 | 多人/多机怎么建桌、地址从哪来 | [`docs/hosting.md`](docs/hosting.md) |
 | 上反代（TLS、SSE、认证） | [`docs/deploy-proxy.md`](docs/deploy-proxy.md) |
