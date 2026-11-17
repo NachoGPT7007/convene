@@ -173,6 +173,7 @@
     background: color-mix(in srgb, var(--sign) 10%, transparent);
   }
   .state.failed, .state.rejected { color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, var(--line)); }
+  .state.unclaimed, .state.stalled { color: var(--warn); border-color: color-mix(in srgb, var(--sign) 55%, var(--line)); }
 
   /* setup */
   #setup {
@@ -335,6 +336,7 @@
   <span class="pill">发言权 <b id="pFloor">—</b></span>
   <span class="spacer"></span>
   <span class="pill"><span class="dot" id="dot"></span><span id="link">未连接</span></span>
+  <button id="btnAttendance" hidden title="托管：只按回合走，不错过也不插话">托管</button>
   <button id="btnInbox" title="收件箱">私信</button>
   <button id="btnDesks" title="本机的桌子与成员">桌子</button>
   <button id="btnNew" title="开一张新桌子">开桌</button>
@@ -595,6 +597,25 @@
     E_NOT_OWNER: '这一步只有任务的执行席位能做。',
   };
 
+  /** POST to a table path other than entries (attendance today); same auth and error text. */
+  async function postJson(path, payload) {
+    const res = await fetch(tablePath(path), {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + cfg.token, 'content-type': 'application/json' },
+      body: JSON.stringify(payload ?? {}),
+    });
+    let body = null;
+    try { body = await res.json(); } catch {}
+    if (!res.ok) {
+      const code = (body && body.error && body.error.code) || ('HTTP_' + res.status);
+      const raw = (body && body.error && body.error.message) || ('HTTP ' + res.status);
+      const err = new Error(ERROR_TEXT[code] || raw);
+      err.code = code;
+      throw err;
+    }
+    return body;
+  }
+
   async function postEntry(payload) {
     const res = await fetch(tablePath('entries'), {
       method: 'POST',
@@ -730,6 +751,8 @@
       if (sys) meta.appendChild(el('span', 'tag', '系统 ' + sys));
       if (s.role) meta.appendChild(el('span', 'tag', s.role));
       if (s.proxy) meta.appendChild(el('span', 'tag grant', 'PROXY'));
+      // A managed human is away: no vote, no interjection. Say it on the card, do not infer it.
+      if (s.attendance === 'away') meta.appendChild(el('span', 'tag grant', '托管'));
       const g = s.grants || {};
       const on = ['speak_anytime', 'reset_depth', 'read_dm_all', 'veto'].filter(k => g[k] === true);
       meta.appendChild(el('span', 'tag' + (on.length ? ' grant' : ''), '权限 ' + (on.length ? on.join(' · ') : '无')));
@@ -900,6 +923,14 @@
     state.open = p.status === 'open';
     state.holder = p.floor.holder;
     state.human = seats.some(s => s.seat === state.mySeat && s.kind === 'human');
+    const mine = seats.find(s => s.seat === state.mySeat);
+    state.attendance = mine?.attendance === 'away' ? 'away' : 'present';
+    const att = $('btnAttendance');
+    if (att) {
+      att.hidden = !(mine && mine.kind === 'human');
+      att.textContent = state.attendance === 'away' ? '接管' : '托管';
+      att.setAttribute('aria-pressed', String(state.attendance === 'away'));
+    }
     state.canSay = state.open && (p.floor.you_have_floor === true || state.human);
     state.tail = p.tail || [];
 
@@ -997,6 +1028,17 @@
 
   $('btnConnect').addEventListener('click', connect);
   $('btnForget').addEventListener('click', forgetEverything);
+  $('btnAttendance').addEventListener('click', async () => {
+    const next = state.attendance === 'away' ? 'present' : 'away';
+    try {
+      await postJson('attendance', { attendance: next });
+      state.attendance = next;
+      $('btnAttendance').textContent = next === 'away' ? '接管' : '托管';
+      await refresh();
+    } catch (err) {
+      $('sendHint').textContent = err.message || String(err);
+    }
+  });
   $('btnSay').addEventListener('click', () => setMode('say'));
   $('btnDm').addEventListener('click', () => setMode('dm'));
   $('btnSend').addEventListener('click', send);

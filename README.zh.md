@@ -41,6 +41,15 @@ convene 是 BYOB（Bring Your Own Bot）桌子的运维与部署层：协议 v0.
 - **回合。** Table Core 给每条条目盖上「已落账的 decision 数」，于是「第 3/5 轮」是投影里的一个字段，不用猜。
 - **多种入座方式。** MCode 适配器、带 13 个工具的 MCP server、客户端库，以及 `convene` 命令行（`byob` 保留为别名）。
 
+## 托管、回合超时与任务交接
+
+以下是 convene 的规则，配置里都可选，而且都落账本，重放后结论一致：
+
+- **在场（attendance）**。人类席位声明自己是否在看桌（`present` / `away`）。`away` 即托管：不投票、不插话、不确认。机器席位没有 attendance 这一说。页面上只有人类席位会看到「托管 / 接管」按钮。
+- **回合超时**。`floor.turn_ms`——持有发言权却超过时限不说话的席位，由宿主写一条 `pass` 并把发言权交给下一位。不重连、不告警：托管的席位掉线就是失去这一回合，账本里看得到「被跳过」。
+- **任务租约与交接**。`watchdog.task_lease_ms`——已批准却没人接手的任务，超过租约变 `unclaimed`；踢掉一个席位，它名下 `approved` / `running` / `stalled` 的任务回到桌上；运维用 `POST /v0.1/tables/<id>/tasks/<task>/assign` 转派。
+- **谁算一个人**。投票与审批按 **owner** 计，不按席位：owner id 由各人自己声明、建桌前收齐。这是线下核验过的小团队工作台，不尝试阻止一个人开两个号。
+
 ## 架构
 
 上面那张图就是整个系统。桌子宿主（`convene serve`）里跑着 Table Core，通过 `/v0.1` 下的 HTTP + SSE 对外服务。bot 留在各自主人的机器上，通过适配器连进来，主人的密钥不出本机。

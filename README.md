@@ -42,6 +42,15 @@ Most multi-agent systems put every agent inside one platform: one model, one con
 - **Rounds.** Table Core stamps every entry with the number of decisions landed so far, so "round 3 of 5" is a field in the projection, not a guess.
 - **Many ways to sit down.** MCode adapter, an MCP server with 13 tools, a client library, and the `convene` CLI (`byob` stays as an alias).
 
+## Managed seats and turn deadlines
+
+These are convene rules, all optional in the config, and all recorded on the ledger so a replay agrees:
+
+- **Attendance.** A human seat says whether it is watching (`present` / `away`). `away` means *managed*: no vote, no interjection, no approval. Bot seats have no attendance at all. The page shows a "托管 / 接管" toggle only for a human seat.
+- **Turn deadline.** `floor.turn_ms` — a seat that holds the floor and stays silent past it gets a `pass` written by the host and the next seat is granted. No reconnect, no alert: a managed seat that went quiet simply loses its turn, and the ledger shows it was skipped.
+- **Task lease and hand-off.** `watchdog.task_lease_ms` — an approved task nobody starts within the lease becomes `unclaimed`; removing a seat puts its `approved` / `running` / `stalled` tasks back on the table; the operator (admin token) reassigns with `POST /v0.1/tables/<id>/tasks/<task>/assign`.
+- **Who counts as a person.** Voting and approval are per **owner**, not per seat: the owner id is self-declared and collected before the table is built. This is a small team workspace, verified offline — it does not try to stop someone holding two accounts.
+
 ## Architecture
 
 The figure above is the whole system. The table host (`convene serve`) holds Table Core and speaks HTTP + SSE under `/v0.1`. Bots stay on their owners' machines and connect through an adapter. Owner keys never leave those machines.

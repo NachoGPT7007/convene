@@ -30,6 +30,8 @@ export class Table extends EventEmitter {
   tasks = new Map<string, Task>();
   holder: string | null = null;
   grantSeq: number | null = null;
+  /** When the current turn started, read from the floor_granted entry so a replay agrees with the host. */
+  private grantedAt = 0;
   pstate: PolicyState;
   status: 'open' | 'closed' = 'open';
   closeReason?: string;
@@ -83,8 +85,14 @@ export class Table extends EventEmitter {
         if (e.event === 'seat_joined') this.seats.set(d.seat as string, { ...(d as unknown as Seat), joined_seq: e.seq });
         if (e.event === 'floor_granted') {
           this.holder = (d.holder as string) ?? null; this.grantSeq = e.seq; this.pstate = d.policy as PolicyState;
+          this.grantedAt = Date.parse(e.ts ?? '') || 0;
           if (d.depth_reset) this.botDepth = 0;
           this.savedHolder = (d.resume as string) ?? null;
+        }
+        if (e.event === 'attendance') {
+          const who = this.seats.get(d.seat as string);
+          // A human's own statement about being at the table. Undefined reads as present.
+          if (who) who.attendance = d.attendance as 'present' | 'away';
         }
         if (e.event === 'join_request') {
           this.pendingJoins.set(d.owner as string, { seat: d.seat as string, publicKey: d.public_key as string, seq: e.seq });
@@ -112,6 +120,7 @@ export class Table extends EventEmitter {
           t.state = d.state as Task['state'];
           if (d.executor !== undefined) t.executor = d.executor as string | null;
           if (d.receipt_seq) t.receipt_seq = d.receipt_seq as number;
+          if (d.lease_deadline_ms !== undefined) t.lease_deadline_ms = d.lease_deadline_ms as number;
           t.last_progress_ms = Date.parse(e.ts ?? '') || 0;
           this.tasks.set(id, t);
         }
@@ -351,6 +360,14 @@ export class Table extends EventEmitter {
     const held = this.holder === seatId;
     const e = this.write({ seat: 'core', kind: 'system', event: 'seat_removed',
       body: `${seatId} removed${reason ? `: ${reason}` : ''}`, data: { seat: seatId } });
+    // A removed executor cannot finish: put its tasks back on the table so an operator can reassign them.
+    for (const t of this.tasks.values()) {
+      if (t.executor === seatId && ['approved', 'running', 'stalled'].includes(t.state)) {
+        this.write({ seat: 'core', kind: 'system', event: 'task_state', task: t.id,
+          body: `${t.id} unclaimed: executor ${seatId} was removed`,
+          data: { state: 'unclaimed', executor: null, reason: 'executor_removed' } });
+      }
+    }
     // Its turn cannot be left hanging: hand the floor on, or close if nobody is left.
     if (held && this.status === 'open' && this.grantSeq !== null) this.advance(this.pstate, true);
     return e;
@@ -391,7 +408,9 @@ export class Table extends EventEmitter {
     const id = `task-${e.seq}`;
     this.write({ seat: 'core', kind: 'system', event: 'task_opened', task: id, reply_to: e.seq, to: plan.auto ? ['@' + plan.executor] : [],
       body: plan.auto ? `${id} auto-approved (${plan.why}); executor ${plan.executor}` : `${id} awaiting approval from owner ${plan.owner}`,
-      data: { proposer: proposer.seat, owner: plan.owner, effects: e.effects, state: plan.auto ? 'approved' : 'awaiting_approval', executor: plan.auto ? plan.executor : null, planned_executor: plan.executor } });
+      data: { proposer: proposer.seat, owner: plan.owner, effects: e.effects, state: plan.auto ? 'approved' : 'awaiting_approval',
+        executor: plan.auto ? plan.executor : null, planned_executor: plan.executor,
+        ...(this.cfg.watchdog?.task_lease_ms ? { lease_deadline_ms: this.now() + this.cfg.watchdog.task_lease_ms } : {}) } });
   }
 
   task(id: string): Task {
@@ -413,7 +432,8 @@ export class Table extends EventEmitter {
     const planned = (this.entries[t.opened_seq - 1].data?.planned_executor as string) ?? null;
     this.write({ seat: 'core', kind: 'system', event: 'task_state', task: t.id, to: approve && planned ? ['@' + planned] : [],
       body: approve ? `${t.id} approved by ${req.owner}; executor ${planned}` : `${t.id} rejected by ${req.owner}`,
-      data: { state: approve ? 'approved' : 'rejected', executor: approve ? planned : null } });
+      data: { state: approve ? 'approved' : 'rejected', executor: approve ? planned : null,
+        ...(approve && this.cfg.watchdog?.task_lease_ms ? { lease_deadline_ms: this.now() + this.cfg.watchdog.task_lease_ms } : {}) } });
     return e;
   }
 
@@ -444,8 +464,64 @@ export class Table extends EventEmitter {
     return e;
   }
 
+  /**
+   * A human says whether they are watching the table. Only the human seat itself can change it, and
+   * a bot seat has no attendance at all. Managed (away) means: no vote, no interjection, no approval.
+   */
+  setAttendance(seatId: string, attendance: 'present' | 'away'): Entry {
+    const s = this.seat(seatId);
+    if (s.kind !== 'human') throw new ByobError('E_NOT_OWNER', `${seatId} is a bot seat; attendance belongs to a human`);
+    if (attendance !== 'present' && attendance !== 'away') throw new ByobError('E_SCHEMA', 'attendance must be present or away');
+    return this.write({ seat: 'core', kind: 'system', event: 'attendance',
+      body: `${seatId} is ${attendance === 'away' ? 'away (managed: no vote, no interjection)' : 'present'}`,
+      data: { seat: seatId, attendance } });
+  }
+
+  /** Who may vote or be counted as "present": a human who says they are watching, never a bot or a managed seat. */
+  canVote(seatId: string): boolean {
+    const s = this.seats.get(seatId);
+    return s?.kind === 'human' && (s.attendance ?? 'present') === 'present';
+  }
+
+  /** Give a waiting task to another bot of the same owner. The operator's lever after a seat is removed. */
+  reassignTask(taskId: string, executor: string): Entry {
+    const t = this.task(taskId);
+    const s = this.seat(executor);
+    // Say "a task runs on a bot" before "wrong owner": the first is the actionable mistake.
+    if (s.kind !== 'bot') throw new ByobError('E_CONFIG', `${executor} is a human seat; tasks run on bots`);
+    if (s.owner !== t.owner) throw new ByobError('E_NOT_OWNER', `${executor} belongs to ${s.owner}; ${t.id} affects ${t.owner}`);
+    if (!['approved', 'unclaimed', 'stalled'].includes(t.state)) throw new ByobError('E_TASK_STATE', `${t.id} is ${t.state}`);
+    return this.write({ seat: 'core', kind: 'system', event: 'task_state', task: t.id, to: ['@' + executor],
+      body: `${t.id} reassigned to ${executor}`,
+      data: { state: 'approved', executor, reassigned_from: t.executor ?? null } });
+  }
+
   /** Watchdog: mark tasks with no progress past heartbeat as stalled. */
   tick() {
+    // A held turn has a deadline: a managed seat that went quiet must not freeze the table. The skip
+    // is a ledger entry, so a replay shows the same order; it is not a silent projection rule.
+    const turn = this.cfg.floor?.turn_ms;
+    if (turn && this.status === 'open' && this.holder && this.grantSeq !== null && this.grantedAt) {
+      if (this.now() - this.grantedAt >= turn) {
+        const holder = this.holder;
+        const e = this.write({ seat: holder, kind: 'pass',
+          body: `skipped: no reply within ${turn}ms`,
+          data: { skipped: true, timeout_ms: turn } });
+        this.advance(this.policy.after(this.pstate, e));
+      }
+    }
+    // An approved task that nobody started inside its lease goes back to the table, where an operator
+    // can reassign it. Without this, a removed or sleeping executor leaves the task waiting forever.
+    const lease = this.cfg.watchdog?.task_lease_ms;
+    if (lease) {
+      for (const t of this.tasks.values()) {
+        if (t.state === 'approved' && t.lease_deadline_ms && this.now() > t.lease_deadline_ms) {
+          this.write({ seat: 'core', kind: 'system', event: 'task_state', task: t.id,
+            body: `${t.id} unclaimed: not started within ${lease}ms`,
+            data: { state: 'unclaimed', executor: null, reason: 'lease_expired' } });
+        }
+      }
+    }
     const hb = this.cfg.watchdog?.heartbeat_ms;
     if (!hb) return;
     for (const t of this.tasks.values()) {
@@ -480,6 +556,8 @@ export class Table extends EventEmitter {
       // Who is behind this seat, what runs it, and how it got here: owner is the human principal,
       // bot is the agent, transport is the channel it joined over.
       transport: s.transport ?? null,
+      // A managed human has no vote; the page must be able to say so, not guess from a nickname.
+      attendance: s.kind === 'human' ? (s.attendance ?? 'present') : null,
       runtime: s.card.runtime ?? null,
       // The privileges the owner signed. Without this the dashboard showed "权限 无" for everyone.
       grants: s.card.grants ?? null,

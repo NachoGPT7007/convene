@@ -3,77 +3,207 @@
   "$id": "https://byob.dev/schemas/v0.1/table-config.json",
   "title": "Table configuration (create table request)",
   "type": "object",
-  "required": ["id", "topic", "topology", "owners", "termination"],
+  "required": [
+    "id",
+    "topic",
+    "topology",
+    "owners",
+    "termination"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "$ref": "common.json#/$defs/id" },
-    "topic": { "type": "string", "minLength": 1, "maxLength": 4000 },
-    "parent": { "$ref": "common.json#/$defs/id", "description": "Parent table id when this is a sub-table." },
+    "id": {
+      "$ref": "common.json#/$defs/id"
+    },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "parent": {
+      "$ref": "common.json#/$defs/id",
+      "description": "Parent table id when this is a sub-table."
+    },
     "owners": {
       "type": "object",
       "description": "Owner registry: owner id -> Ed25519 public key (SPKI DER, base64). Auto-approval is not configured here: the table creator does not hold the owner's key, so only the owner's signed capability card can grant it.",
       "additionalProperties": {
         "type": "object",
-        "required": ["public_key"],
+        "required": [
+          "public_key"
+        ],
         "additionalProperties": false,
         "properties": {
-          "public_key": { "type": "string" }
+          "public_key": {
+            "type": "string"
+          }
         }
       }
     },
     "topology": {
       "type": "object",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "properties": {
-        "kind": { "enum": ["broadcast", "hub_spoke", "pipeline", "debate", "delegation"] },
-        "order": { "type": "array", "items": { "type": "string" } },
-        "rounds": { "type": "integer", "minimum": 1, "maximum": 100 },
-        "pro": { "type": "string" },
-        "con": { "type": "string" },
-        "judge": { "type": "string" },
-        "hub": { "type": "string" },
-        "stages": { "type": "array", "items": { "type": "string" } },
-        "reports": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }
+        "kind": {
+          "enum": [
+            "broadcast",
+            "hub_spoke",
+            "pipeline",
+            "debate",
+            "delegation"
+          ]
+        },
+        "order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "pro": {
+          "type": "string"
+        },
+        "con": {
+          "type": "string"
+        },
+        "judge": {
+          "type": "string"
+        },
+        "hub": {
+          "type": "string"
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reports": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     },
     "visibility": {
       "type": "object",
       "description": "Per-seat visibility override: seat id -> list of '<seat>.<kind>' patterns ('*' wildcards allowed).",
-      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     },
     "floor": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "max_chars": { "type": "integer", "minimum": 16 },
-        "max_bot_depth": { "type": "integer", "minimum": 1 },
-        "decision_by": { "type": "array", "items": { "type": "string" } }
+        "max_chars": {
+          "type": "integer",
+          "minimum": 16
+        },
+        "max_bot_depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision_by": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "turn_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Convene: how long a seat may hold the floor without speaking before the host writes a pass and moves on. Omitted means no automatic skip — a table can wait forever, which is the upstream behaviour."
+        }
       }
     },
     "termination": {
       "type": "object",
-      "required": ["any"],
+      "required": [
+        "any"
+      ],
       "additionalProperties": false,
       "properties": {
         "any": {
-          "type": "array", "minItems": 1,
+          "type": "array",
+          "minItems": 1,
           "items": {
             "oneOf": [
-              { "enum": ["decision", "rounds_exhausted", "depth_exhausted"] },
-              { "type": "object", "required": ["budget_tokens"], "additionalProperties": false, "properties": { "budget_tokens": { "type": "integer", "minimum": 1 } } },
-              { "type": "object", "required": ["max_entries"], "additionalProperties": false, "properties": { "max_entries": { "type": "integer", "minimum": 1 } } }
+              {
+                "enum": [
+                  "decision",
+                  "rounds_exhausted",
+                  "depth_exhausted"
+                ]
+              },
+              {
+                "type": "object",
+                "required": [
+                  "budget_tokens"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "budget_tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "max_entries"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "max_entries": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
             ]
           }
         }
       }
     },
     "projection": {
-      "type": "object", "additionalProperties": false,
-      "properties": { "inline_limit": { "type": "integer", "minimum": 64 } }
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inline_limit": {
+          "type": "integer",
+          "minimum": 64
+        }
+      }
     },
     "watchdog": {
-      "type": "object", "additionalProperties": false,
-      "properties": { "heartbeat_ms": { "type": "integer", "minimum": 10 } }
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat_ms": {
+          "type": "integer",
+          "minimum": 10
+        },
+        "task_lease_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Convene: how long an approved task may wait to be started before the host marks it unclaimed. Omitted means no lease; tasks wait for a human decision."
+        }
+      }
     }
   }
 }

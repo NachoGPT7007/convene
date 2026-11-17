@@ -115,7 +115,7 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
       }
       const id = parts[2];
       const t = host.get(id);
-      const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/.+$/, 'tasks/:id').replace(/^seats\/[^/]+\/remove$/, 'seats/:seat/remove').replace(/^subscriptions\/[^/]+$/, 'subscriptions/:id')}`;
+      const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/[^/]+\/assign$/, 'tasks/:id/assign').replace(/^tasks\/.+$/, 'tasks/:id').replace(/^seats\/[^/]+\/remove$/, 'seats/:seat/remove').replace(/^subscriptions\/[^/]+$/, 'subscriptions/:id')}`;
       switch (route) {
         case 'POST seats': return json(res, 201, host.join(id, (await readBody(req)) as never));
         // Anyone may ask to be let in; the signature over their own public key is the proof.
@@ -146,6 +146,21 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
         case 'GET memory': host.auth(id, bearer); return json(res, 200, t.memory());
         case 'GET tasks/:id': host.auth(id, bearer); return json(res, 200, t.task(parts[4]));
         case 'POST seats/:seat/remove': host.authAdmin(id, bearer); host.removeSeat(id, parts[4]); return json(res, 200, { ok: true, removed: parts[4] });
+        // A human seat says whether it is watching. Managed (away) means no vote and no interjection.
+        case 'POST attendance': {
+          const seat = host.auth(id, bearer);
+          const body = (await readBody(req)) as { attendance?: string };
+          const e = t.setAttendance(seat, body.attendance as 'present' | 'away');
+          return json(res, 200, { ok: true, seat, attendance: (body.attendance as string), seq: e.seq });
+        }
+        // The operator's lever after an executor is removed or asleep: hand the task to another bot.
+        case 'POST tasks/:id/assign': {
+          host.authAdmin(id, bearer);
+          const body = (await readBody(req)) as { executor?: string };
+          if (!body.executor) throw new ByobError('E_SCHEMA', 'assign needs an executor');
+          const e = t.reassignTask(parts[4], body.executor);
+          return json(res, 200, { ok: true, task: parts[4], executor: body.executor, seq: e.seq });
+        }
         case 'POST approvals': return json(res, 201, t.ownerDecision((await readBody(req)) as never));
         case 'POST close': host.authAdmin(id, bearer); t.close(String(((await readBody(req)) as { reason?: string }).reason ?? 'closed by admin')); return json(res, 200, t.memory());
         case 'GET ledger': host.authAdmin(id, bearer); return json(res, 200, t.entries);

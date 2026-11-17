@@ -113,20 +113,24 @@ export interface TableConfig {
   owners: Record<string, { public_key: string }>;
   topology: Topology;
   visibility?: Record<string, string[]>;
-  floor?: { max_chars?: number; max_bot_depth?: number; decision_by?: string[] };
+  floor?: { max_chars?: number; max_bot_depth?: number; decision_by?: string[]; turn_ms?: number };
   termination: { any: TerminationCond[] };
   projection?: { inline_limit?: number };
-  watchdog?: { heartbeat_ms?: number };
+  watchdog?: { heartbeat_ms?: number; task_lease_ms?: number };
 }
 
 export interface Seat {
   seat: string; owner: string; kind: 'bot' | 'human'; role?: string; transport?: string; card: CapabilityCard; joined_seq: number;
+  /** Convene: a human seat's own statement of whether they are watching the table. Defaults to present. */
+  attendance?: 'present' | 'away';
 }
 
-export type TaskState = 'awaiting_approval' | 'approved' | 'running' | 'reported' | 'verified' | 'rejected' | 'failed' | 'stalled';
+export type TaskState = 'awaiting_approval' | 'approved' | 'running' | 'reported' | 'verified' | 'rejected' | 'failed' | 'stalled' | 'unclaimed';
 export interface Task {
   id: string; opened_seq: number; proposer: string; owner: string; effects: Effect[];
   state: TaskState; executor: string | null; receipt_seq?: number; last_progress_ms: number;
+  /** Convene: when an approved task must be started by, from watchdog.task_lease_ms. */
+  lease_deadline_ms?: number;
 }
 
 export interface Projection {
