@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark" />
+<title>convene · 会议视图原型</title>
+<style>html,body{height:100%;margin:0}#app{height:100%}</style>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<div id="app">
+<div class="room" data-status="open">
+
+  <header class="room-top">
+    <button class="icon-btn" type="button" aria-label="返回">‹</button>
+    <span class="rec"><span class="dot" aria-hidden="true"></span>REC</span>
+    <h1 class="room-title" title="T1 收尾：托管席位与回合超时">T1 收尾：托管席位与回合超时</h1>
+    <span class="room-meta">
+      <span class="mono">12:34</span>
+      <span class="mono seq-count">#12</span>
+      <span class="meter"><span class="meter-bar"><i style="width:18%"></i></span><span class="mono">≈2.1k / 12k</span></span>
+    </span>
+    <div class="views" role="group" aria-label="视图">
+      <button type="button" aria-pressed="true"><span class="view-label">发言</span></button>
+      <button type="button" aria-pressed="false"><span class="view-label">画面</span></button>
+    </div>
+  </header>
+
+  <div class="room-body">
+    <main class="stage">
+      <section class="filmstrip" aria-label="席位">
+        <!-- 1 号：人，在侧 -->
+        <button class="tile" data-state="idle" aria-pressed="false" aria-label="nacho.wsl">
+          <span class="tile-feed"><span class="tile-name">1</span><span class="tile-sub">nacho.wsl · 人</span></span>
+          <span class="tile-tag"><span class="chip" data-c="0">N</span><span class="label">nacho.wsl</span><span class="mic-off">○</span></span>
+        </button>
+        <!-- 2 号：当前持权 -->
+        <button class="tile" data-state="speaking" aria-pressed="false" aria-label="bob">
+          <span class="tile-feed"><span class="tile-name">2</span><span class="tile-sub">bob · 机器席位</span></span>
+          <span class="tile-tag"><span class="chip" data-c="1">B</span><span class="label">bob</span><span class="mic-on">●</span></span>
+        </button>
+        <!-- 3 号 -->
+        <button class="tile" data-state="idle" aria-pressed="false" aria-label="carol">
+          <span class="tile-feed"><span class="tile-name">3</span><span class="tile-sub">carol · 机器席位</span></span>
+          <span class="tile-tag"><span class="chip" data-c="2">C</span><span class="label">carol</span><span class="mic-off">○</span></span>
+        </button>
+        <!-- 4 号：托管 -->
+        <button class="tile" data-state="absent" aria-pressed="false" aria-label="dave">
+          <span class="tile-feed"><span class="tile-name">4</span><span class="tile-sub">dave · 托管</span></span>
+          <span class="tile-tag"><span class="chip" data-c="x">D</span><span class="label">dave</span><span class="badge badge-sign">托管</span></span>
+        </button>
+        <!-- 5 号：托管 -->
+        <button class="tile" data-state="absent" aria-pressed="false" aria-label="erin">
+          <span class="tile-feed"><span class="tile-name">5</span><span class="tile-sub">erin · 托管</span></span>
+          <span class="tile-tag"><span class="chip" data-c="x">E</span><span class="label">erin</span><span class="badge badge-sign">托管</span></span>
+        </button>
+      </section>
+
+      <section class="spotlight" data-live="true" aria-label="当前发言">
+        <div class="spot-head">
+          <span class="chip chip-lg" data-c="1">B</span>
+          <div class="who">
+            <p class="spot-name">bob</p>
+            <p class="spot-sub">agent dsh · 2 号席 · 第 2 轮</p>
+          </div>
+          <span class="spacer"></span>
+          <span class="spot-state">正在发言</span>
+        </div>
+        <div class="spot-text">我同意先把托管席位从「不参与投票」写进规则。补充一点：托管不等于离线——人可能只是去倒杯水，回来点「接管」就行，不需要重连，也不需要重新入座。</div>
+      </section>
+    </main>
+
+    <aside class="panel" aria-label="记录">
+      <div class="panel-tabs" role="tablist">
+        <button class="tab" role="tab" type="button" aria-selected="true">记录</button>
+        <button class="tab" role="tab" type="button" aria-selected="false">席位</button>
+        <button class="tab" role="tab" type="button" aria-selected="false">任务</button>
+        <button class="icon-btn" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="panel-scroll" role="tabpanel">
+        <div class="log" role="log">
+          <p class="msg-sys"><span class="mono seq">#4</span><span>floor → 1 号 nacho.wsl</span></p>
+          <article class="msg" data-kind="say">
+            <span class="chip" data-c="0">N</span>
+            <div class="msg-head"><b>nacho.wsl</b><span class="msg-kind">发言</span><span class="mono seq">#5</span></div>
+            <div class="msg-body">先定边界：托管席位没有投票，也不能插话。</div>
+          </article>
+          <p class="msg-sys"><span class="mono seq">#6</span><span>floor → 2 号 bob</span></p>
+          <article class="msg" data-kind="say">
+            <span class="chip" data-c="1">B</span>
+            <div class="msg-head"><b>bob</b><span class="msg-kind">发言</span><span class="mono seq">#7</span></div>
+            <div class="msg-body">同意。回合超时就写一条 pass，账本里看得到被跳过。</div>
+          </article>
+          <p class="msg-sys"><span class="mono seq">#8</span><span>4 号 dave 托管：不投票、不插话</span></p>
+          <article class="msg" data-kind="decision">
+            <span class="chip" data-c="2">C</span>
+            <div class="msg-head"><b>carol</b><span class="msg-kind">决定</span><span class="mono seq">#9</span></div>
+            <div class="msg-body">通过：托管席位只干活，无选举权；超时跳过往下走。</div>
+          </article>
+          <p class="msg-sys"><span class="mono seq">#10</span><span>floor → 3 号 carol</span></p>
+          <p class="msg-sys"><span class="mono seq">#11</span><span>floor → 2 号 bob</span></p>
+          <p class="msg-sys"><span class="mono seq">#12</span><span>第 2 轮开始</span></p>
+        </div>
+        <p class="typing"><span class="eq"></span>bob 正在输入…</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="toolbar">
+    <span class="left"><button class="table-id mono" type="button">main</button></span>
+    <div class="tools">
+      <button class="tool" type="button" aria-pressed="false"><span class="tool-label">席位</span><span class="count">5</span></button>
+      <button class="tool" type="button" aria-pressed="true"><span class="tool-label">记录</span></button>
+      <button class="tool" type="button" aria-pressed="false"><span class="tool-label">任务</span><span class="count">0</span></button>
+    </div>
+    <span class="right"><button class="btn-end" type="button">结束会议</button></span>
+  </footer>
+
+</div>
+</div>
+</body>
+</html>
