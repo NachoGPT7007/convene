@@ -168,6 +168,17 @@ npm run build:miniapp    # 把 Table Core 打包到 apps/rabbit-hole/miniapp/nod
 
 <sub>截图使用演示数据。</sub>
 
+## 会议视图（`/` 这个页面）
+
+`GET /` 直接服务 **Rabbit Hole 自己的客户端**（`apps/rabbit-hole/miniapp/client/`），只加了一个只读标志和一个 `attendance`（托管）徽章。数据来自 `/api` 适配层，把我们的表投影成那个客户端认识的形状（`src/meeting-snapshot.ts`）。
+
+- 这个视图**只读**：开桌、关桌、签字仍在 CLI。从页面开桌、关桌或签字一律返回 `405` 并说明原因。
+- `/admin` 仍是运维页（`web/index.html`）：开桌、成员管理、准入、踢人。
+- `/api` 没有 token，因此**只认本机回环**、拒绝转发头——和 `/local` 同一条规则。远程用 SSH，不另开公网入口。
+- 会议记录不含私信：适配层丢掉 `kind: "dm"`，页面不可能泄露私密消息。
+
+`web/` 看板保留为归档的运维面，不再是日常界面。
+
 ## 协议
 
 [SPEC.md](SPEC.md) 是 `byob/0.1` 的规范正文，[`schemas/`](schemas/) 里是 Table Core 运行时用来校验的 JSON Schema。内容包括：模型、HTTP + SSE 接口、桌子配置、入座握手、账本条目、投影、拓扑、发言权与终止、任务网关、MCP 桥和全部错误码。

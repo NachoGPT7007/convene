@@ -259,10 +259,10 @@ function homeView() {
       h('h1', { class: 'wordmark' }, markEl(), 'Rabbit Hole'),
       h('span', { class: 'spacer' }),
       themeButton(),
-      bridge ? h('button', { class: 'btn', type: 'button', 'data-key': 'ask', title: tr('home.askTitle'), onclick: askAgent }, icon('chat'), tr('home.ask')) : null,
-      h('button', { class: 'btn btn-primary', type: 'button', 'data-key': 'new', onclick: openNewMeeting }, icon('plus'), tr('home.new'))),
+      bridge && !window.__CONVENE_READONLY__ ? h('button', { class: 'btn', type: 'button', 'data-key': 'ask', title: tr('home.askTitle'), onclick: askAgent }, icon('chat'), tr('home.ask')) : null,
+      window.__CONVENE_READONLY__ ? h('span', { class: 'hint' }, tr('ro.label')) : h('button', { class: 'btn btn-primary', type: 'button', 'data-key': 'new', onclick: openNewMeeting }, icon('plus'), tr('home.new'))),
     h('main', { class: 'home-main' },
-      pending.length ? h('section', { 'aria-labelledby': 'h-sign' },
+      pending.length && !window.__CONVENE_READONLY__ ? h('section', { 'aria-labelledby': 'h-sign' },
         h('div', { class: 'section-head' }, h('h2', { id: 'h-sign' }, tr('sign.waiting')), h('span', { class: 'n mono' }, String(pending.length))),
         h('ul', { class: 'sign-list' }, pending.map((x) => h('li', { class: 'sign-item' },
           h('span', { class: 'id mono' }, x.id),
@@ -294,6 +294,7 @@ function tile(t, s, { compact } = {}) {
   if (turn && turn.kind !== 'floor') badges.push(h('span', { class: 'badge badge-sign' }, tr(turn.kind === 'execute' ? 'tile.execute' : 'tile.verify') + (compact ? '' : ' ' + (turn.task ?? ''))));
   if (!s.joined) badges.push(h('span', { class: 'badge' }, tr('tile.absent')));
   if (s.proxy && !compact) badges.push(h('span', { class: 'badge' }, tr('tile.proxy')));
+  if (s.attendance === 'away') badges.push(h('span', { class: 'badge badge-sign' }, tr('tile.away')));
   const voice = liveTurn ? eq() : live ? h('span', { class: 'mic-on' }, icon('mic')) : h('span', { class: 'mic-off' }, icon('micOff'));
   const tag = h('span', { class: 'tile-tag' }, chip(s.seat), compact ? null : h('span', { class: 'label' }, [s.seat, seatDetail(s)].filter(Boolean).join(' · ')), voice, h('span', { class: 'sr-only' }, tr(live ? 'tile.hasFloor' : 'tile.noFloor')));
   const said = liveTurn ? tailText(S.captions[s.seat], 140) : lastSpeech(t, s.seat)?.body;
@@ -342,6 +343,7 @@ function spotlight(t) {
     h('div', { class: 'spot-text' + (shown ? '' : ' muted'), 'data-scroll': 'spot', 'data-stick': String(!!turn), 'data-streaming': String(!!turn), ...(turn ? { 'data-caption-seat': id } : {}) }, shown || placeholder));
 }
 function signCard(t) {
+  if (window.__CONVENE_READONLY__) return null;
   const pending = t.tasks.filter((x) => x.state === 'awaiting_approval');
   if (!pending.length) return null;
   const x = pending[0];
@@ -476,7 +478,10 @@ function roomView() {
         toolButton('transcript'),
         toolButton('breakouts', t.children.length),
         toolButton('tasks', pending || t.tasks.length, pending > 0)),
-      h('span', { class: 'right' }, closed ? h('button', { class: 'btn', type: 'button', 'data-key': 'leave', onclick: goHome }, tr('room.leave')) : h('button', { class: 'btn-end', type: 'button', 'data-key': 'end', onclick: () => confirmEnd(t) }, tr('room.end')))));
+      h('span', { class: 'right' }, window.__CONVENE_READONLY__
+        ? h('span', { class: 'hint' }, tr('ro.label'))
+        : closed ? h('button', { class: 'btn', type: 'button', 'data-key': 'leave', onclick: goHome }, tr('room.leave'))
+          : h('button', { class: 'btn-end', type: 'button', 'data-key': 'end', onclick: () => confirmEnd(t) }, tr('room.end')))));
 }
 
 // ---------- dialogs ----------

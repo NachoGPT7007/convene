@@ -1,17 +1,34 @@
 // HTTP + SSE transport for BYOB v0.1.
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TableHost } from './host.js';
 import { scanLocal, isLoopback } from './local.js';
 import { buildTableConfig } from './init.js';
 import { SubscriptionRegistry, deliverWake } from './subscriptions.js';
+import { handleApi, broadcastEntry } from './api-adapter.js';
 import { ByobError, PROTOCOL, type Entry } from './protocol.js';
 
 const json = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json', 'byob-protocol': PROTOCOL });
   res.end(JSON.stringify(body));
+};
+
+/** The meeting view is Rabbit Hole's own client, served as-is: the fork stays upstream code. */
+function meetingClientDir(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const p = join(dir, 'apps', 'rabbit-hole', 'miniapp', 'client');
+    if (existsSync(join(p, 'index.html'))) return p;
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+const ASSET_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
 };
 
 /** The dashboard is one static file next to the source tree. Read per request: editing it must not need a restart. */
@@ -37,6 +54,9 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
   // Subscriptions change delivery, not the ledger. With no data directory (bare test host) they
   // live in memory; under `serve` they are a file next to the tables and survive a restart.
   const subscriptions = new SubscriptionRegistry(opts.dataDir ? join(opts.dataDir, 'subscriptions.json') : null);
+  // Rabbit Hole's client re-reads the snapshot after each entry; one event per entry is enough.
+  const apiClients = new Set<ServerResponse>();
+  host.onEntry((tableId) => broadcastEntry(apiClients, tableId));
   host.onEntry((tableId, e) => {
     const t = host.tables.get(tableId);
     const subs = subscriptions.forTable(tableId);
@@ -97,13 +117,39 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
         return json(res, 404, { error: { code: 'E_NOT_FOUND', message: `${req.method} ${url.pathname}` } });
       }
 
+      // Rabbit Hole's client talks to /api without a token. That is safe only because the adapter
+      // reads the tables on this machine: same loopback rule as /local, no forwarding headers.
+      if (parts[0] === 'api') {
+        const fwd = req.headers['x-forwarded-for'] ?? req.headers['x-real-ip']
+          ?? req.headers['cf-connecting-ip'] ?? req.headers['forwarded'];
+        if (fwd || !isLoopback(req.socket.remoteAddress)) {
+          return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'meeting API is only reachable directly from this machine' } });
+        }
+        return handleApi(host, req, res, parts, apiClients);
+      }
+
       if (parts[0] !== 'v0.1') {
-        // Root is the dashboard: a static page that only ever talks to /v0.1 with a seat token.
-        if (req.method === 'GET' && parts.length === 0) {
-          const html = uiHtml();
-          if (html === null) return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'dashboard not found (web/index.html missing)' } });
-          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
-          return res.end(html);
+        const client = meetingClientDir();
+        if (req.method === 'GET') {
+          const path = url.pathname;
+          // The client routes itself under /meetings; / is the same document.
+          if (client && (path === '/' || path === '/meetings' || /^\/meetings\/[^/]+$/.test(path))) {
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+            return res.end(readFileSync(join(client, 'index.html')));
+          }
+          if (path === '/admin') {
+            const html = uiHtml();
+            if (html === null) return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'operator page not found (web/index.html missing)' } });
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+            return res.end(html);
+          }
+          if (client) {
+            const file = join(client, path.slice(1));
+            if (!path.includes('..') && existsSync(file) && ['/style.css', '/app.js', '/i18n.js', '/seats.js', '/icon.png'].includes(path)) {
+              res.writeHead(200, { 'content-type': ASSET_MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
+              return res.end(readFileSync(file));
+            }
+          }
         }
         return json(res, 404, { error: { code: 'E_NOT_FOUND', message: 'use /v0.1/...' } });
       }

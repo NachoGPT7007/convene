@@ -54,6 +54,19 @@
 
 `README.md` + `README.zh.md`、`CREDITS.md` + `CREDITS.zh.md`、`CONTRIBUTING.md` + `CONTRIBUTING.zh.md`、`docs/deploy-proxy.md`、`docs/hosting.md`
 
+### 8. 会议视图：夺舍 Rabbit Hole 的 client（2026-11-17）
+
+`GET /` 改为直接服务 `apps/rabbit-hole/miniapp/client/`（不复制、不 fork 成第二套），由 `src/api-adapter.ts` 提供 `/api`、`src/meeting-snapshot.ts` 把表投影成它要的 snapshot。
+
+| 点 | 内容 |
+|---|---|
+| 只读 | 开桌/关桌/签字 405；client 里加 `__CONVENE_READONLY__` 隐藏三个写入口 |
+| 安全 | `/api` 只认 loopback、拒转发头；会议记录丢掉 `dm`（否则页面会泄露私信） |
+| 运维 | `GET /admin` 仍是 `web/index.html`，作为归档运维面 |
+| 上游改动 | `client/` 只动了 4 处：只读标志、托管徽章、两处只读文案（i18n 加 2 个 key） |
+
+实测（隔离 7399）：`/` 返回 Rabbit Hole 页面并列出 2 张桌；`/meetings/e2e` 显示 2 席、bob 持权、transcript 6 条；`/meetings/att` 显示 h 的「托管」徽章、`00:10` 时长、右下 `read-only`；`/api/tables` 返回 meetings，POST 返回 405；`/admin` 仍是旧看板。
+
 ### 7. seat daemon（T1，2026-11-17）
 
 表把「该你了」推给席位，daemon 落本地 spool，agent 空闲时来取。**只读搬运，绝不写账本。**

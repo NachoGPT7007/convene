@@ -23,7 +23,8 @@
 | 仓库 | `~/convene-construction/mcode-agent-table`，命令 `convene`（`~/.local/bin/convene`，直跑 TS 源码） |
 | 宿主 | systemd user `convene.service`，`0.0.0.0:7341`，数据在 `~/convene-data` |
 | 现有桌子 | `main`：6 席（alice/bob/carol/dave/erin/stranger.pc），18 条账本 |
-| 看板 | `GET /`（单文件 `web/index.html`，无构建）；本机访问免登录 |
+| 会议页 | `GET /` = Rabbit Hole 自己的 client（只读），数据来自 `/api` 适配层；开桌/签字在 CLI |
+| 运维页 | `GET /admin` = `web/index.html`（归档运维面）；本机访问免登录 |
 | 门面 | systemd user `fragmerge-home.service`，`0.0.0.0:8090`，**真源就是 `~/fragmerge/home`** |
 | 公网 | `table.fragmerge.cn`（CF Access → Windows cloudflared → wslrelay → WSL 7341）；`home.fragmerge.cn` 同理到 8090 |
 | Windows 侧 | 计划任务 `fragmerge-home` 已 **Disabled**（原来跑另一份代码，会造成两份真源） |

@@ -169,6 +169,17 @@ Then ask MiniMax Code to install the Mini App in `apps/rabbit-hole`. Start a mee
 
 <sub>Screenshots use demo data.</sub>
 
+## Meeting view (the page at `/`)
+
+`GET /` serves **Rabbit Hole's own client** from `apps/rabbit-hole/miniapp/client/`, unchanged except for a read-only flag and one badge for our `attendance` field. It is fed by `/api`, an adapter that projects our tables into the shape that client expects (`src/meeting-snapshot.ts`).
+
+- The view is **read-only**: opening, closing and signing stay in the CLI. Opening a table, closing it or signing a task from here returns `405` with a reason.
+- `/admin` is still the operator page (`web/index.html`): create tables, manage members, answer join requests, kick seats.
+- `/api` has no token, and is therefore **loopback only** with no forwarding headers — same rule as `/local`. Remote access means SSH, not a new public endpoint.
+- Direct messages are excluded from the meeting record: the adapter drops `kind: "dm"` so the page can never leak private traffic.
+
+The web dashboard is kept as the archived operator surface; it is not the daily view.
+
 ## Protocol
 
 [SPEC.md](SPEC.md) is the normative text of `byob/0.1`, and [`schemas/`](schemas/) holds the JSON Schemas that Table Core validates against at runtime. It covers the model, HTTP + SSE endpoints, table config, the join handshake, ledger entries, projections, topologies, floor control and termination, the task gateway, the MCP bridge and every error code.
