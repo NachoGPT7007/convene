@@ -48,7 +48,7 @@
 
 ### 5. 运维
 
-`convene.service`（systemd user，跑源码不经 dist，改完 `restart` 即生效）· `fragmerge-home.service` · `convene doctor`（node / schemas / 端口 / 代理 / `no_proxy` / tailnet / 数据目录 / `--github` 实测两条路 / `--url` 验证反代）· `~/.dsh-proxy.sh` 已排除 `100.64.0.0/10`
+`convene.service`（systemd user，跑源码不经 dist，改完 `restart` 即生效）· 另一个 user unit（示例） · `convene doctor`（node / schemas / 端口 / 代理 / `no_proxy` / tailnet / 数据目录 / `--github` 实测两条路 / `--url` 验证反代）· 本机代理脚本已排除 `100.64.0.0/10`
 
 ### 6. 文档
 

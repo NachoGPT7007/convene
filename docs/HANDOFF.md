@@ -25,9 +25,9 @@
 | 现有桌子 | `main`：6 席（alice/bob/carol/dave/erin/stranger.pc），18 条账本 |
 | 会议页 | `GET /` = Rabbit Hole 自己的 client（只读），数据来自 `/api` 适配层；开桌/签字在 CLI |
 | 运维页 | `GET /admin` = `web/index.html`（归档运维面）；本机访问免登录 |
-| 门面 | systemd user `fragmerge-home.service`，`0.0.0.0:8090`，**真源就是 `~/fragmerge/home`** |
-| 公网 | `table.fragmerge.cn`（CF Access → Windows cloudflared → wslrelay → WSL 7341）；`home.fragmerge.cn` 同理到 8090 |
-| Windows 侧 | 计划任务 `fragmerge-home` 已 **Disabled**（原来跑另一份代码，会造成两份真源） |
+| 门面 | systemd user `other-app.service`，`0.0.0.0:8090`，**真源就是 `~/other-app`** |
+| 公网 | `table.example.com`（CF Access → Windows cloudflared → wslrelay → WSL 7341）；`home.example.com` 同理到 8090 |
+| Windows 侧 | 计划任务 `other-app` 已 **Disabled**（原来跑另一份代码，会造成两份真源） |
 | 唤醒 | `convene daemon serve`（收 webhook→spool）/ `convene daemon mcp`（agent 侧 stdio MCP）。**本机未装成常驻服务**：`convene daemon unit` 只打印 unit，装不装由人决定 |
 
 验收（一次跑完）：

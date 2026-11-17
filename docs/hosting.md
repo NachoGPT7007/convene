@@ -72,9 +72,9 @@ join 的签名由 owner 私钥产生，Table Core 按 `table-config.owners` 里�
 
 - 宿主：systemd user `convene.service`，绑 `0.0.0.0:7341`（2026-11-17 前是 `127.0.0.1`，
   tailnet 上别人连不进来），数据在 `~/convene-data`。
-- 三条可达路径：本机 `127.0.0.1:7341`；tailnet `http://100.69.213.72:7341`；
-  公网 `https://table.fragmerge.cn`（Cloudflare Access 登录后仍需席位链接）。
-- 公网入口：`table.fragmerge.cn`，Cloudflare Access 保护，Tunnel 指到 `127.0.0.1:7341`。
+- 三条可达路径：本机 `127.0.0.1:7341`；tailnet `http://100.64.0.10:7341`；
+  公网 `https://table.example.com`（Cloudflare Access 登录后仍需席位链接）。
+- 公网入口：`table.example.com`，Cloudflare Access 保护，Tunnel 指到 `127.0.0.1:7341`。
 - 门面：`home` 上的一张「协作桌子」卡片。
 
 换一台机器，这些可以全都不一样，项目代码不用动。
