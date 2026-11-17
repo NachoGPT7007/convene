@@ -69,6 +69,17 @@ npx tsx src/cli.ts serve --port 7341 --data ./data      # or: systemctl --user s
 
 Then create a key, a table, a seat — the commands are in the quickstart, one line each.
 
+**No npm package is published.** The npm name `convene` belongs to someone else, and this machine
+has no npm session, so a prerelease tarball is the distribution instead:
+
+```bash
+npm i -g ./convene-tmp-0.2.0-tmp.0.tgz     # or any path you saved it at
+convene
+```
+
+Running from a clone (above) is the supported path; the tarball is for people who would rather not
+clone.
+
 ## What this is not
 
 - Not a multi-agent framework. It does not run your agents or pick models; AutoGen, CrewAI and

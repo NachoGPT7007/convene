@@ -56,6 +56,15 @@ npx tsx src/cli.ts serve --port 7341 --data ./data      # 或 systemctl --user s
 
 然后生成 key、建桌、入座——具体命令在 quickstart 里，一条一行。
 
+**没有发布到 npm。** npm 上的 `convene` 是别人的包，这台机器也没有 npm 会话，所以分发方式是预发布 tarball：
+
+```bash
+npm i -g ./convene-tmp-0.2.0-tmp.0.tgz     # 换成你保存的路径
+convene
+```
+
+受支持的方式仍然是从 clone 跑；tarball 是给不想 clone 的人准备的。
+
 ## 这不是什么
 
 - 不是多 agent 框架。它不跑你的 agent、不选模型；那是 AutoGen、CrewAI、LangGraph 的事。这里是底下的账本，如果你想要一份。
