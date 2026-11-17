@@ -120,6 +120,7 @@
 | `wakeFor` 把 `floor_granted`/`task_opened` 同时算成 mention | 语义：一条投递报两个原因，唤醒就不再有区分度 | mention 只算非 system 条目 |
 | STATUS 说 Rabbit Hole「不含本项目的新字段」 | 文档与事实不符：`vendor/table-core.mjs` 就是本仓 HEAD 的 bundle，含全部新逻辑 | 已改写，理由换成「宿主型 mini app + 第二套应用层」 |
 | 推送失败即丢（daemon 停机超过重试窗口） | 能力缺口：重启机器后期间消息消失 | 重启与等待中按 cursor 读 projection 补拉，实测补回 1 条 |
+| 前端是自绘的暗色三栏，与仓库里现成的 Rabbit Hole 视觉资产脱节 | 观感：同样的桌子，两套面孔 | **C1 换皮**：搬 Rabbit Hole 的调色板、席位色、卡片与浮起控制条进 `web/index.html`，结构/路由/认证/JS 全不动（195+/87-） |
 
 **待决**：`round` 语义 = decision 计数，不是 policy 回合。一轮若没出 decision，`round` 不前进。要不要另加 `turn` 字段？
 

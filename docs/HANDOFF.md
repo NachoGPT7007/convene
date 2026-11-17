@@ -70,9 +70,9 @@ convene doctor --url http://127.0.0.1:7341
 
 | 路 | 做什么 | 代价 |
 |---|---|---|
-| A 保持现状 | `web/` 继续演进 | 无迁移成本；UI 不如 Rabbit Hole 的会议视图成熟 |
+| A 保持现状 | `web/` 继续演进；视觉已换成 Rabbit Hole 的调色板/席位色/卡片语言（C1），结构未动 | 无迁移成本；仍是三栏看板，没有它的会议视图 |
 | B 以 Rabbit Hole 为底重写 | fork `client/`，接 `/v0.1`，补 `dm`/`join_*`/`seat_removed` 渲染，去掉宿主桥，移植本机免登录/开桌/踢人 | 与 A 的功能并集 + 一套渲染改造；之后两套前端会分叉 |
-| C 只借设计 | 把 Rabbit Hole 的 `style.css` 与会议视图搬进 `web/`，数据层不动 | 改动小，收益是观感；不解决「操作型桌管理」与它的方向差异 |
+| C 只借设计 | C1 换皮已完成；C2 房间视图（座位网格/聚焦/transcript）未做 | C2 约 350–450 行，仍不碰数据层 |
 
 评估依据：Rabbit Hole client 1486 行（`app.js` 657 + `i18n.js` 440 + `style.css` 291 + `seats.js` 34 + `index.html` 64），
 `window.mcode` 只在 3 处出现且都是可选链；它的三栏/会议视图与本项目「席位 / 账本 / 任务」不同构。
