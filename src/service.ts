@@ -66,7 +66,8 @@ export function locateRepoRoot(from: string): string {
     const pkg = join(dir, 'package.json');
     if (existsSync(pkg)) {
       try {
-        if (JSON.parse(readFileSync(pkg, 'utf8')).name === 'convene') return dir;
+        const name = JSON.parse(readFileSync(pkg, 'utf8')).name as string;
+        if (name === 'convene' || name === 'convene-tmp') return dir;
       } catch { /* keep walking */ }
     }
     const parent = dirname(dir);
