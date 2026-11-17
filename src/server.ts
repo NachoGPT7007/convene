@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { TableHost } from './host.js';
 import { scanLocal, isLoopback } from './local.js';
 import { buildTableConfig } from './init.js';
+import { SubscriptionRegistry, deliverWake } from './subscriptions.js';
 import { ByobError, PROTOCOL, type Entry } from './protocol.js';
 
 const json = (res: ServerResponse, status: number, body: unknown) => {
@@ -33,6 +34,16 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 export function createTableServer(host: TableHost, opts: { tickMs?: number; dataDir?: string; disableLocal?: boolean } = {}): Server {
+  // Subscriptions change delivery, not the ledger. With no data directory (bare test host) they
+  // live in memory; under `serve` they are a file next to the tables and survive a restart.
+  const subscriptions = new SubscriptionRegistry(opts.dataDir ? join(opts.dataDir, 'subscriptions.json') : null);
+  host.onEntry((tableId, e) => {
+    const t = host.tables.get(tableId);
+    const subs = subscriptions.forTable(tableId);
+    if (!t || !subs.length) return;
+    // Visibility first, wake-up second: a push must never show a seat what its projection hides.
+    void deliverWake(tableId, e, subs.filter(s => t.canSee(e, s.seat)));
+  });
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', 'http://x');
@@ -104,11 +115,28 @@ export function createTableServer(host: TableHost, opts: { tickMs?: number; data
       }
       const id = parts[2];
       const t = host.get(id);
-      const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/.+$/, 'tasks/:id').replace(/^seats\/[^/]+\/remove$/, 'seats/:seat/remove')}`;
+      const route = `${req.method} ${parts.slice(3).join('/').replace(/^entries\/\d+$/, 'entries/:seq').replace(/^tasks\/.+$/, 'tasks/:id').replace(/^seats\/[^/]+\/remove$/, 'seats/:seat/remove').replace(/^subscriptions\/[^/]+$/, 'subscriptions/:id')}`;
       switch (route) {
         case 'POST seats': return json(res, 201, host.join(id, (await readBody(req)) as never));
         // Anyone may ask to be let in; the signature over their own public key is the proof.
         case 'POST join-requests': return json(res, 201, t.requestJoin((await readBody(req)) as never));
+        // A seat tells the host where its daemon listens. Only that seat's own token can do it,
+        // and only that seat's own ledger entries are ever delivered there.
+        case 'POST subscriptions': {
+          const seat = host.auth(id, bearer);
+          const body = (await readBody(req)) as { url?: string; events?: string[]; token?: string };
+          if (!body?.url) throw new ByobError('E_SCHEMA', 'subscription needs a url');
+          try {
+            const sub = subscriptions.add(id, seat, { url: body.url, events: body.events as never, token: body.token });
+            return json(res, 201, { id: sub.id, seat, url: sub.url, events: sub.events });
+          } catch (err) { throw new ByobError('E_SCHEMA', (err as Error).message); }
+        }
+        case 'DELETE subscriptions/:id': {
+          const seat = host.auth(id, bearer);
+          const ok = subscriptions.remove(id, seat, parts[4]);
+          if (!ok) throw new ByobError('E_NOT_FOUND', 'no such subscription for this seat');
+          return json(res, 200, { ok: true, id: parts[4] });
+        }
         case 'POST entries': return json(res, 201, t.post(host.auth(id, bearer), (await readBody(req)) as never));
         case 'GET projection': {
           const s = url.searchParams.get('since');

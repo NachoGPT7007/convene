@@ -9,6 +9,7 @@ const ADMIN = '__admin__';
 export class TableHost {
   tables = new Map<string, Table>();
   private tokens = new Map<string, Record<string, string>>(); // table -> sha256(token) -> seat
+  private entryListeners: ((table: string, e: Entry) => void)[] = [];
 
   constructor(private store?: JsonlStore, private now: () => number = Date.now) {
     if (store) for (const id of store.tables()) {
@@ -44,9 +45,17 @@ export class TableHost {
     return { table: t, admin_token: admin };
   }
 
+  /** Every entry of every table, for features that must react without becoming a writer. */
+  onEntry(fn: (table: string, e: Entry) => void): void { this.entryListeners.push(fn); }
+
   /** When a sub-table closes, only its decisions flow back to the parent ledger. */
   private wire(t: Table) {
     t.on('entry', (e: Entry) => {
+      // Listeners run before the sub-table branch returns: a wake-up for a table-closed event is
+      // still a wake-up. One bad listener must not break the ledger write that emitted it.
+      for (const fn of this.entryListeners) {
+        try { fn(t.cfg.id, e); } catch (err) { console.warn(`convene: entry listener failed: ${(err as Error).message}`); }
+      }
       if (e.event !== 'table_closed' || !t.cfg.parent) return;
       const p = this.tables.get(t.cfg.parent);
       if (!p) return;
