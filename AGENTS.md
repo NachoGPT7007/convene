@@ -59,7 +59,7 @@
 
 - **先清单后执行**。动手前给带依赖顺序的清单，按号走；顺序错了，依赖会叠成屎山。
 - **动手前先定位真源**。要改一个正在提供服务的组件，先说清它由哪台机器、哪个进程、哪个目录提供，再去改。改完必须有"变化可见"的证据（接口返回变了、页面出现新内容），不是"文件已经改了"。
-- **先找现成的**。现成有 A2A 的 push 格式、systemd 的常驻能力、官方 MCP SDK——能用就别自建。自建只留给真正没有的部分（目前只剩 seat daemon 的 spool 语义、`access.yaml` 合成器）。
+- **先找现成的**。现成有 A2A 的 push 格式、systemd 的常驻能力、官方 MCP SDK——能用就别自建。自建只留给真正没有的部分（目前只剩 `access.yaml` 合成器；seat daemon 的 spool 语义已落地）。
 - **改配置先备份**，并给回滚命令。
 - **一次提交一件事**，说明里写实测输出，不写"应该可以"。
 
@@ -68,7 +68,7 @@
 ```bash
 cd ~/convene-construction/mcode-agent-table
 npx tsc -p . --noEmit
-npm test                    # 当前 139 条，上游 73 条必须全绿
+npm test                    # 当前 169 条，上游 73 条必须全绿
 convene doctor --url http://127.0.0.1:7341
 curl -s http://127.0.0.1:7341/v0.1   # {"protocol":"byob/0.1","tables":N}
 ```

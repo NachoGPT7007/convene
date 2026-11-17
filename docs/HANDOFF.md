@@ -1,12 +1,12 @@
-# convene 交接（2026-11-17 19:00 CST）
+# convene 交接（2026-11-17 19:20 CST）
 
 > 给下一个会话的入口。读完这份 + `AGENTS.md` + `docs/STATUS.md` 就能直接开工，
 > 不需要回溯上一轮的对话。
 
 ## 一句话状态
 
-协议扩展、CLI、看板、桌与成员管理、入座准入都已落地并可实测；**139 条测试全绿**，
-本仓领先上游 `b00862b` **27 个提交**。下一步是 `docs/STATUS.md` 里的 **T1（seat daemon）**。
+协议扩展、CLI、看板、桌与成员管理、入座准入、**T1 seat daemon** 都已落地并可实测；**169 条测试全绿**，
+本仓领先上游 `b00862b` **28 个提交**。下一步是 `docs/STATUS.md` 里的 **T2（入座公开表单页）**。
 
 ## 必读
 
@@ -27,6 +27,7 @@
 | 门面 | systemd user `fragmerge-home.service`，`0.0.0.0:8090`，**真源就是 `~/fragmerge/home`** |
 | 公网 | `table.fragmerge.cn`（CF Access → Windows cloudflared → wslrelay → WSL 7341）；`home.fragmerge.cn` 同理到 8090 |
 | Windows 侧 | 计划任务 `fragmerge-home` 已 **Disabled**（原来跑另一份代码，会造成两份真源） |
+| 唤醒 | `convene daemon serve`（收 webhook→spool）/ `convene daemon mcp`（agent 侧 stdio MCP）。**本机未装成常驻服务**：`convene daemon unit` 只打印 unit，装不装由人决定 |
 
 验收（一次跑完）：
 
@@ -46,18 +47,35 @@ convene doctor --url http://127.0.0.1:7341
 6. **准入走账本**（`join_request` → `join_admitted`），不改 `table-config.owners`；答案是「在门口开」：只有本机操作者能批准。
 7. **`round` = decision 计数**（不是 policy 回合）。这个语义差异是已知的、待决的，见 STATUS 末尾。
 
-## 下一步：T1 seat daemon
+## 下一步：T2 入座公开表单页
 
-目标（STATUS 里的验收）：**杀掉 agent 再拉起，未读消息还在；floor 变更 2 秒内到达。**
+目标（STATUS 里的验收）：**陌生人打开一个页面填公钥即发起请求。**
 
-已有骨架：`packages/seat-daemon/`（`@convene/seat-daemon`，private，无代码）。它的 README 写好了契约：
+现有的准入链路已经通了（`join_request` → 看板弹窗「允许」→ `join_admitted` 落账本，重放生效），
+缺的只是「陌生人从哪找到这个入口」。别重做协议：一个新的公开 GET 页 + 复用
+`POST /v0.1/tables/<id>/join-requests`，T1 的推送不参与。
 
-- 接 webhook（照 A2A push notification 的形状），**不是轮询**
-- 本地 append-only spool，重启可重放
-- 对外暴露本地 MCP 工具（`seat_wait` 这类），agent 空闲时来取
-- **绝不成为第二个写者**：只搬运 Table Core 已经写下的东西
+## 待决：前端要不要改成 Rabbit Hole
 
-不要自己造的部分：常驻用 systemd（已有 `convene.service` 的模式）、MCP 用官方 SDK、HTTP 用 Node 内置。真正要写的只有 spool 语义与唤醒条件。
+`web/index.html`（单文件，1193 行）是本项目当前前端。Rabbit Hole 在 `apps/rabbit-hole/`，MIT，
+但它是 **MiniMax Code 的 mini app**：`miniapp.json` 声明 `runtime.kind=process` + `agentAccess: session.run`，
+`node/server.mjs` 的 `start(context)` 需要宿主注入 `dataDir/pluginRoot/listen/signal/logger/agent`；
+前端走 `/api/*` 到它自己的 `service.mjs`（与本仓 `src/` 平行的第二套应用层）。本机没装 MiniMax 宿主。
+
+**更正**：曾写「它的 table-core 副本不含本项目新字段」——不成立。`apps/rabbit-hole/miniapp/node/vendor/table-core.mjs`
+是本仓 HEAD 用 `scripts/build-miniapp.mjs` 打包的产物（文件头有 `bundled from mcode-agent-table@<sha>`），
+含 `join_*`/`seat_removed`/`dm` 全部逻辑；缺新字段的是**它的 client 渲染**与 `service.mjs` 的行为。
+
+三条路，等拍板，不要擅自推翻已上线前端：
+
+| 路 | 做什么 | 代价 |
+|---|---|---|
+| A 保持现状 | `web/` 继续演进 | 无迁移成本；UI 不如 Rabbit Hole 的会议视图成熟 |
+| B 以 Rabbit Hole 为底重写 | fork `client/`，接 `/v0.1`，补 `dm`/`join_*`/`seat_removed` 渲染，去掉宿主桥，移植本机免登录/开桌/踢人 | 与 A 的功能并集 + 一套渲染改造；之后两套前端会分叉 |
+| C 只借设计 | 把 Rabbit Hole 的 `style.css` 与会议视图搬进 `web/`，数据层不动 | 改动小，收益是观感；不解决「操作型桌管理」与它的方向差异 |
+
+评估依据：Rabbit Hole client 1486 行（`app.js` 657 + `i18n.js` 440 + `style.css` 291 + `seats.js` 34 + `index.html` 64），
+`window.mcode` 只在 3 处出现且都是可选链；它的三栏/会议视图与本项目「席位 / 账本 / 任务」不同构。
 
 ## 踩过的坑（别再踩）
 
@@ -70,11 +88,13 @@ convene doctor --url http://127.0.0.1:7341
 | `npm run build` 把 `test/` 编进 `dist/`，测试跑两遍 | `vitest.config.ts` 只收 `test/` |
 | systemd unit 指向 `dist/`，改源码不生效 | 改跑源码（tsx），`--from dist` 才用构建产物 |
 | 席位只绑 `127.0.0.1`，tailnet 连不到 | 绑 `0.0.0.0`；`/local/*` 对外仍 404 |
+| 以为 webhook 推送就是保证 | 推送是**尽力而为**：超时/重试后放弃，daemon 停机就丢。保证在 spool + 重启补拉（`projection?since=cursor`），推送只负责「2 秒内」。别把可靠性押在 POST 成功上 |
+| seat token 写进 systemd `ExecStart` | `/proc` 里全机器可读。token 只进 `envfile`（0600），unit 用 `EnvironmentFile=` |
 
 ## 新会话开场白（可直接粘贴）
 
 ```
 读 convene-construction/mcode-agent-table 下的 AGENTS.md、docs/STATUS.md、
-docs/HANDOFF.md，然后按清单做 T1（seat daemon）。先给带依赖顺序的清单再动手，
+docs/HANDOFF.md，然后按清单做 T2（入座公开表单页）。先给带依赖顺序的清单再动手，
 不要重复讨论已经定死的决策。
 ```

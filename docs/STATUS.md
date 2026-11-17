@@ -1,10 +1,10 @@
 # convene 状态清单
 
-> 更新：2026-11-17 01:10 CST ｜ 基准：上游 `b00862b` ｜ 本仓领先上游 **20 个提交**
+> 更新：2026-11-17 19:15 CST ｜ 基准：上游 `b00862b` ｜ 本仓领先上游 **28 个提交**
 > 判定标准：**只有能指到代码、测试或实测输出的才算完成**。设计文档里的"定了"不等于做完了。
 > 要整体接手，先读 [`HANDOFF.md`](HANDOFF.md)。
 
-规模：`src/` 20 个文件 2691 行，`test/` 15 个文件 **130 条**（上游 73 条保持全绿），`web/` 单文件 1193 行，`schemas/` 8 个。
+规模：`src/` 22 个文件 2997 行，`packages/seat-daemon/` 9 个源文件 + `schemas/wake.json`，`test/` 19 个文件 **169 条**（上游 73 条保持全绿），`web/` 单文件 1193 行，`schemas/` 8 个。
 
 ---
 
@@ -54,13 +54,29 @@
 
 `README.md` + `README.zh.md`、`CREDITS.md` + `CREDITS.zh.md`、`CONTRIBUTING.md` + `CONTRIBUTING.zh.md`、`docs/deploy-proxy.md`、`docs/hosting.md`
 
+### 7. seat daemon（T1，2026-11-17）
+
+表把「该你了」推给席位，daemon 落本地 spool，agent 空闲时来取。**只读搬运，绝不写账本。**
+
+| 部分 | 内容 | 证据 |
+|---|---|---|
+| push 形状 | `packages/seat-daemon/schemas/wake.json`：A2A push-notification 形状，`wakes` ∈ `floor/task/dm/mention`；先冻 schema 再写代码 | `checkWake` 校验，坏 body 400 |
+| 订阅 | `POST/DELETE /v0.1/tables/:id/subscriptions`，seat token 认证，只有本席位能订/退自己的；`(seat, url)` 幂等，重启复用同一 id；持久化 `subscriptions.json`（不入账本） | `test/subscriptions.test.ts` |
+| 唤醒判定 | `src/wake.ts` 纯函数：floor 看 `data.holder` 或地址；task 看 `task_opened/task_state` 的地址；dm 只叫收件人；mention 只算非 system 条目 | `test/seat-daemon.test.ts` |
+| 投递 | 写在账本之后异步 POST，超时 1.5s、重试 2 次、4xx 不重试；**先过 `canSee`**，推送只带裁剪字段，正文永不出现在 push 里；失败只记日志，不拖慢写者 | `test/subscriptions.test.ts`（含「receiver 全挂账本照写」） |
+| spool | `wakes.jsonl` append-only + fsync 后才回 200；`cursor.json` 原子替换；重启重放；同一 `(table, seq)` 去重；残行截断 | `test/seat-daemon.test.ts` |
+| 本地 MCP | `seat_wait`（阻塞到有未读或超时）、`seat_inbox`、`seat_ack`、`seat_status`；与 receiver **分进程**，靠 spool 文件交接 | InMemory MCP 测试 3 条 |
+| 补拉 | daemon 停机期间推送会丢（重试后放弃），重启时与 `seat_wait` 等待中按 cursor 读 `projection?since=` 补回，再跑同一套 wake 规则 | 实测：停机漏 1 条 → 重启 `caught up: 1` |
+| 常驻 | `convene daemon unit` 只打印 systemd user unit（token 走 `envfile` 的 0600 文件，不上命令行），不代装；停/启/回滚命令随 unit 一起打印 | 实测 unit 文本 |
+
+**实测（隔离端口 7399/7392，2026-11-17 19:08 CST）**：dm 推送 147 ms 到达 spool、floor 交接 16 ms（验收要求 2 s）；daemon 停机时发的 dm 不在 spool，重启后 catch-up 补 1 条；agent 连续两次拉起，3 条未读都在；`seat_ack` 后未读归零、cursor 落盘。线上 `convene.service` 已重启，新订阅端点在 `main` 桌返回 401（无 token）。
+
 ---
 
 ## 二、未完成（按依赖排序，之后照此执行）
 
 | 编号 | 事项 | 依赖 | 验收判据 |
 |---|---|---|---|
-| **T1** | seat daemon：webhook 接收 + 本地 spool + 本地 MCP | 无（骨架已在 `packages/seat-daemon`） | 杀掉 agent 再拉起，未读还在；floor 变更 2 秒内到达 |
 | **T2** | 入座确认的**公开表单页**（现在只有看板弹窗，陌生人还不知道去哪发起） | T1 | 陌生人打开一个页面填公钥即发起请求 |
 | **T3** | `join-request.attendance`（live / standby / autonomous，默认 standby） | 无 | 投影可见；不传按 standby；`reset_depth` 不因此升格 |
 | **T4** | 跨机实测（WSL ↔ Fedora） | T1 | 两台机器各一席位，同一张桌跑通一轮 |
@@ -79,7 +95,7 @@
 - 引入 Matrix —— AS 是 passive，阻止不了事件，真 floor 做不了；
 - Codync 的 P2P 网络 —— 本机 TUN 下会退回 relay，已有 Tailscale 够用；
 - 改 `SPEC.md` —— 那是上游原文。扩展以 `schemas/` 与代码为准，上游接受后再补规范；
-- 适配上游的 Rabbit Hole miniapp —— 它用 `apps/rabbit-hole` 里的 `table-core` 副本，不含本项目的新字段；本项目的前端是 `web/`。
+- 适配上游的 Rabbit Hole miniapp **当唯一前端** —— 它是 MiniMax Code 的 mini app：`start(context)` 要宿主注入 `dataDir/pluginRoot/signal/agent`，UI 走 `/api/*` 和它自己的 `service.mjs`（与本仓 `src/` 平行的第二套应用层），本机没装宿主。**不**代表它不可借鉴：`client/`（1486 行，MIT）可以 fork 出来接 `/v0.1`，代价是补 `dm`/`join_*`/`seat_removed` 渲染、去掉宿主桥、移植本机免登录与桌管理。当前选择是 `web/`，是否迁移待定，见 HANDOFF。
 
 ---
 
@@ -101,6 +117,9 @@
 | `convene ui --seat seats/alice.seat.json` 报裸 ENOENT | 体验：相对路径依赖当前目录 | 席位查找器：名字/相对/绝对都认，报错列出查过哪里、有哪些 |
 | 桌子只绑 `127.0.0.1`，tailnet 上的人连不到 | 能力缺口 | 绑 `0.0.0.0`；`/local/*` 对外仍 404 |
 | 公网打开只看到一个要 token 的框 | 体验：像登录失败 | 明确说明「这不是登录」并给出两种进入方式 |
+| `wakeFor` 把 `floor_granted`/`task_opened` 同时算成 mention | 语义：一条投递报两个原因，唤醒就不再有区分度 | mention 只算非 system 条目 |
+| STATUS 说 Rabbit Hole「不含本项目的新字段」 | 文档与事实不符：`vendor/table-core.mjs` 就是本仓 HEAD 的 bundle，含全部新逻辑 | 已改写，理由换成「宿主型 mini app + 第二套应用层」 |
+| 推送失败即丢（daemon 停机超过重试窗口） | 能力缺口：重启机器后期间消息消失 | 重启与等待中按 cursor 读 projection 补拉，实测补回 1 条 |
 
 **待决**：`round` 语义 = decision 计数，不是 policy 回合。一轮若没出 decision，`round` 不前进。要不要另加 `turn` 字段？
 
@@ -109,14 +128,14 @@
 ## 四、执行顺序
 
 ```
-T1 seat daemon ──> T2 入座确认 ──> T4 跨机实测 ──> T6 公网入口
-T3 attendance ──┘                    │
-T5 access.yaml ──────────────────────┘
+T1 ✅ seat daemon ──> T2 入座确认 ──> T4 跨机实测 ──> T6 公网入口
+T3 attendance ──────┘                    │
+T5 access.yaml ──────────────────────────┘
 T7 踢人授权 · T8 表克隆 · T10 限流持久化 · T11 退避 —— 无依赖，可随时插入
 T9 第二主人 —— 需要 T3
 ```
 
-理由：**先单机再跨机**。协议理解错了再跨机调试，代价是十倍。T1 是所有跨机与唤醒能力的地基。
+理由：**先单机再跨机**。协议理解错了再跨机调试，代价是十倍。T1 已落地，下一步 T2。
 
 ---
 
